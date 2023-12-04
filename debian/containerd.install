@@ -1,0 +1,4 @@
+debian/bash-completion/ctr /usr/share/bash-completion/completions/
+debian/config.toml /etc/containerd/
+debian/zsh-completion/_ctr /usr/share/zsh/vendor-completions/
+usr/bin

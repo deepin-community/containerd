@@ -1,0 +1,6 @@
+The following libraries have circular dependency issues, so they are kept in
+vendor directory:
+* github.com/containerd/aufs
+* github.com/containerd/imgcrypt
+* github.com/containerd/zfs
+* github.com/containerd/nri

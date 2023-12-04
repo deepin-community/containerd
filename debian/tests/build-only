@@ -1,0 +1,7 @@
+#!/bin/sh
+
+set -ex
+
+mkdir -p _build
+cp -a /usr/share/gocode/src _build/
+dh_auto_build --buildsystem=golang --builddirectory=_build

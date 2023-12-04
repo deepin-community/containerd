@@ -1,4 +1,49 @@
 #!/usr/bin/make -f
 
+include /usr/share/dpkg/default.mk
+
+PKG        := github.com/containerd/containerd
+GO_LDFLAGS += -X $(PKG)/version.Version=$(DEB_VERSION_UPSTREAM)
+GO_LDFLAGS += -X $(PKG)/version.Revision=$(DEB_VERSION)
+
+EXCLUDES += cmd/protoc-gen-gogoctrd cmd/containerd-stress
+EXCLUDES += runtime/v2/example/cmd
+EXCLUDES += integration
+EXCLUDES += tracing/plugin
+
+# pkg/cri/server tests needs permission in schroot
+# EXCLUDES += pkg/cri/server
+
+# Exclude extra files in -dev pacakge to make it slimmer.
+EXTRA_EXCLUDES += vendor
+EXTRA_EXCLUDES += $(wildcard cmd/*/*.go)
+EXTRA_EXCLUDES += $(filter-out pkg/cri/annotations,$(wildcard pkg/cri/*))
+
+export DH_GOLANG_EXCLUDES := $(EXCLUDES)
+
 %:
-	dh $@
+	dh $@ --buildsystem=golang --with=golang --builddirectory=_build
+
+override_dh_auto_build:
+	dh_auto_build -- -ldflags '$(GO_LDFLAGS)'
+
+ifeq (,$(AUTOPKGTEST_TMP))
+execute_after_dh_auto_build:
+	mkdir -p man
+	make man/containerd-config.8
+	make man/containerd-config.toml.5
+	_build/bin/gen-manpages containerd.8 man
+	_build/bin/gen-manpages ctr.8 man
+	rm -vf _build/bin/gen-manpages
+
+	sed 's|/usr/local/bin|/usr/bin|' containerd.service > debian/containerd.service
+	mkdir -vp debian/bash-completion
+	install -m644 -T /usr/share/gocode/src/github.com/urfave/cli/autocomplete/bash_autocomplete \
+		debian/bash-completion/ctr
+	mkdir -vp debian/zsh-completion
+	sed 's|$$PROG|ctr|g' /usr/share/gocode/src/github.com/urfave/cli/autocomplete/zsh_autocomplete > \
+		debian/zsh-completion/_ctr
+endif
+
+override_dh_auto_install:
+	DH_GOLANG_EXCLUDES="$(EXCLUDES) $(EXTRA_EXCLUDES)" dh_auto_install

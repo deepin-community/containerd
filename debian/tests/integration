@@ -1,0 +1,18 @@
+#!/bin/sh
+
+set -ex
+
+# Let integration start containerd daemon
+systemctl stop containerd
+systemctl status containerd || true
+
+dh_auto_configure -O--buildsystem=golang -O--builddirectory=_build
+
+# overlayfs not work in lxc
+find _build/ -name snapshotter_default_linux.go -exec sed -i 's|DefaultSnapshotter = "overlayfs"|DefaultSnapshotter = "native"|g' {} +
+
+DH_GOLANG_BUILDPKG=github.com/containerd/containerd/integration/client \
+  dh_auto_test -O--buildsystem=golang -O--builddirectory=_build -- -c
+
+# criu no permission in lxc testbed
+./_build/client.test -test.v -test.root

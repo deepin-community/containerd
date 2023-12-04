@@ -1,0 +1,25 @@
+Tests: integration
+Depends: ca-certificates,
+         containerd,
+         lsof,
+         @builddeps@,
+Restrictions: allow-stderr, needs-root, needs-internet, isolation-container, flaky
+# Integration test uses k8s.gcr.io/pause:3.5 image
+# See the supported architectures for this image:
+# $ curl https://k8s.gcr.io/v2/pause/manifests/3.2
+Architecture: amd64, arm64, armel, armhf, ppc64el, s390x
+
+Tests: cri-integration
+Depends: ca-certificates,
+         containerd,
+         containernetworking-plugins,
+         procps,
+         @builddeps@,
+Restrictions: allow-stderr, needs-root, needs-internet, isolation-container, flaky
+Architecture: amd64, arm64, ppc64el
+
+Tests: build-only
+Depends: dh-golang,
+         golang-any,
+         golang-github-containerd-containerd-dev,
+Restrictions: allow-stderr
