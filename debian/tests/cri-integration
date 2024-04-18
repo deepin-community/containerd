@@ -1,0 +1,114 @@
+#!/bin/sh
+
+set -ex
+
+dh_auto_configure -O--buildsystem=golang -O--builddirectory=_build
+
+# overlayfs not work in lxc
+find _build/ -name snapshotter_default_linux.go -exec sed -i 's|DefaultSnapshotter = "overlayfs"|DefaultSnapshotter = "native"|g' {} +
+
+DH_GOPKG=github.com/containerd/containerd/integration/failpoint/cmd \
+  dh_auto_build -O--buildsystem=golang -O--builddirectory=_build
+
+cp -v _build/bin/containerd-shim-runc-fp-v1 /usr/local/bin/
+cp -v _build/bin/cni-bridge-fp /usr/lib/cni
+
+mkdir -p /etc/cni/net.d /etc/cni-fp/net.d
+cat << EOF | tee /etc/cni/net.d/10-containerd-net.conflist
+{
+  "cniVersion": "1.0.0",
+  "name": "containerd-net",
+  "plugins": [
+    {
+      "type": "bridge",
+      "bridge": "cni0",
+      "isGateway": true,
+      "ipMasq": true,
+      "promiscMode": true,
+      "ipam": {
+        "type": "host-local",
+        "ranges": [
+          [{
+            "subnet": "10.88.0.0/16"
+          }],
+          [{
+            "subnet": "2001:4860:4860::/64"
+          }]
+        ],
+        "routes": [
+          { "dst": "0.0.0.0/0" },
+          { "dst": "::/0" }
+        ]
+      }
+    },
+    {
+      "type": "portmap",
+      "capabilities": {"portMappings": true}
+    }
+  ]
+}
+EOF
+
+cat << EOF | tee /etc/cni-fp/net.d/10-containerd-net.conflist
+{
+  "cniVersion": "1.0.0",
+  "name": "containerd-net-failpoint",
+  "plugins": [
+    {
+      "type": "cni-bridge-fp",
+      "bridge": "cni-fp",
+      "isGateway": true,
+      "ipMasq": true,
+      "promiscMode": true,
+      "ipam": {
+        "type": "host-local",
+        "ranges": [
+          [{
+            "subnet": "10.88.0.0/16"
+          }],
+          [{
+            "subnet": "2001:4860:4860::/64"
+          }]
+        ],
+        "routes": [
+          { "dst": "0.0.0.0/0" },
+          { "dst": "::/0" }
+        ]
+      },
+      "capabilities": {
+        "io.kubernetes.cri.pod-annotations": true
+      }
+    },
+    {
+      "type": "portmap",
+      "capabilities": {"portMappings": true}
+    }
+  ]
+}
+EOF
+
+cat << EOF | tee /etc/containerd/config.toml
+version = 2
+
+[plugins]
+  [plugins."io.containerd.grpc.v1.cri"]
+    [plugins."io.containerd.grpc.v1.cri".cni]
+      bin_dir = "/usr/lib/cni"
+      conf_dir = "/etc/cni/net.d"
+    [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+      runtime_type = "io.containerd.runc.v2"
+    [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc-fp]
+      cni_conf_dir = "/etc/cni-fp/net.d"
+      cni_max_conf_num = 1
+      pod_annotations = ["io.containerd.runtime.v2.shim.failpoint.*"]
+      runtime_type = "runc-fp.v1"
+  [plugins."io.containerd.internal.v1.opt"]
+    path = "/var/lib/containerd/opt"
+EOF
+
+systemctl status containerd
+systemctl restart containerd
+systemctl status containerd
+
+DH_GOLANG_BUILDPKG=github.com/containerd/containerd/integration \
+  dh_auto_test -O--buildsystem=golang -O--builddirectory=_build --no-parallel
