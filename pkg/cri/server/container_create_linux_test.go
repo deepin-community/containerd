@@ -37,11 +37,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	runtime "k8s.io/cri-api/pkg/apis/runtime/v1"
+	"tags.cncf.io/container-device-interface/pkg/cdi"
 
 	"github.com/containerd/containerd/pkg/cap"
 	"github.com/containerd/containerd/pkg/cri/annotations"
 	"github.com/containerd/containerd/pkg/cri/config"
 	"github.com/containerd/containerd/pkg/cri/opts"
+	customopts "github.com/containerd/containerd/pkg/cri/opts"
 	"github.com/containerd/containerd/pkg/cri/util"
 	ctrdutil "github.com/containerd/containerd/pkg/cri/util"
 	ostesting "github.com/containerd/containerd/pkg/os/testing"
@@ -239,34 +241,35 @@ func TestContainerCapabilities(t *testing.T) {
 			excludes: util.SubtractStringSlice(allCaps, "CAP_SYS_ADMIN"),
 		},
 	} {
-		t.Logf("TestCase %q", desc)
-		containerConfig, sandboxConfig, imageConfig, specCheck := getCreateContainerTestData()
-		ociRuntime := config.Runtime{}
-		c := newTestCRIService()
-		c.allCaps = allCaps
+		t.Run(desc, func(t *testing.T) {
+			containerConfig, sandboxConfig, imageConfig, specCheck := getCreateContainerTestData()
+			ociRuntime := config.Runtime{}
+			c := newTestCRIService()
+			c.allCaps = allCaps
 
-		containerConfig.Linux.SecurityContext.Capabilities = test.capability
-		spec, err := c.containerSpec(testID, testSandboxID, testPid, "", testContainerName, testImageName, containerConfig, sandboxConfig, imageConfig, nil, ociRuntime)
-		require.NoError(t, err)
+			containerConfig.Linux.SecurityContext.Capabilities = test.capability
+			spec, err := c.containerSpec(testID, testSandboxID, testPid, "", testContainerName, testImageName, containerConfig, sandboxConfig, imageConfig, nil, ociRuntime)
+			require.NoError(t, err)
 
-		if selinux.GetEnabled() {
-			assert.NotEqual(t, "", spec.Process.SelinuxLabel)
-			assert.NotEqual(t, "", spec.Linux.MountLabel)
-		}
+			if selinux.GetEnabled() {
+				assert.NotEqual(t, "", spec.Process.SelinuxLabel)
+				assert.NotEqual(t, "", spec.Linux.MountLabel)
+			}
 
-		specCheck(t, testID, testSandboxID, testPid, spec)
-		for _, include := range test.includes {
-			assert.Contains(t, spec.Process.Capabilities.Bounding, include)
-			assert.Contains(t, spec.Process.Capabilities.Effective, include)
-			assert.Contains(t, spec.Process.Capabilities.Permitted, include)
-		}
-		for _, exclude := range test.excludes {
-			assert.NotContains(t, spec.Process.Capabilities.Bounding, exclude)
-			assert.NotContains(t, spec.Process.Capabilities.Effective, exclude)
-			assert.NotContains(t, spec.Process.Capabilities.Permitted, exclude)
-		}
-		assert.Empty(t, spec.Process.Capabilities.Inheritable)
-		assert.Empty(t, spec.Process.Capabilities.Ambient)
+			specCheck(t, testID, testSandboxID, testPid, spec)
+			for _, include := range test.includes {
+				assert.Contains(t, spec.Process.Capabilities.Bounding, include)
+				assert.Contains(t, spec.Process.Capabilities.Effective, include)
+				assert.Contains(t, spec.Process.Capabilities.Permitted, include)
+			}
+			for _, exclude := range test.excludes {
+				assert.NotContains(t, spec.Process.Capabilities.Bounding, exclude)
+				assert.NotContains(t, spec.Process.Capabilities.Effective, exclude)
+				assert.NotContains(t, spec.Process.Capabilities.Permitted, exclude)
+			}
+			assert.Empty(t, spec.Process.Capabilities.Inheritable)
+			assert.Empty(t, spec.Process.Capabilities.Ambient)
+		})
 	}
 }
 
@@ -426,17 +429,18 @@ func TestContainerAndSandboxPrivileged(t *testing.T) {
 			expectError:         false,
 		},
 	} {
-		t.Logf("TestCase %q", desc)
-		containerConfig.Linux.SecurityContext.Privileged = test.containerPrivileged
-		sandboxConfig.Linux.SecurityContext = &runtime.LinuxSandboxSecurityContext{
-			Privileged: test.sandboxPrivileged,
-		}
-		_, err := c.containerSpec(testID, testSandboxID, testPid, "", testContainerName, testImageName, containerConfig, sandboxConfig, imageConfig, nil, ociRuntime)
-		if test.expectError {
-			assert.Error(t, err)
-		} else {
-			assert.NoError(t, err)
-		}
+		t.Run(desc, func(t *testing.T) {
+			containerConfig.Linux.SecurityContext.Privileged = test.containerPrivileged
+			sandboxConfig.Linux.SecurityContext = &runtime.LinuxSandboxSecurityContext{
+				Privileged: test.sandboxPrivileged,
+			}
+			_, err := c.containerSpec(testID, testSandboxID, testPid, "", testContainerName, testImageName, containerConfig, sandboxConfig, imageConfig, nil, ociRuntime)
+			if test.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
 	}
 }
 
@@ -588,20 +592,22 @@ func TestContainerMounts(t *testing.T) {
 			},
 		},
 	} {
-		config := &runtime.ContainerConfig{
-			Metadata: &runtime.ContainerMetadata{
-				Name:    "test-name",
-				Attempt: 1,
-			},
-			Mounts: test.criMounts,
-			Linux: &runtime.LinuxContainerConfig{
-				SecurityContext: test.securityContext,
-			},
-		}
-		c := newTestCRIService()
-		c.os.(*ostesting.FakeOS).StatFn = test.statFn
-		mounts := c.containerMounts(testSandboxID, config)
-		assert.Equal(t, test.expectedMounts, mounts, desc)
+		t.Run(desc, func(t *testing.T) {
+			config := &runtime.ContainerConfig{
+				Metadata: &runtime.ContainerMetadata{
+					Name:    "test-name",
+					Attempt: 1,
+				},
+				Mounts: test.criMounts,
+				Linux: &runtime.LinuxContainerConfig{
+					SecurityContext: test.securityContext,
+				},
+			}
+			c := newTestCRIService()
+			c.os.(*ostesting.FakeOS).StatFn = test.statFn
+			mounts := c.containerMounts(testSandboxID, config)
+			assert.Equal(t, test.expectedMounts, mounts, desc)
+		})
 	}
 }
 
@@ -628,24 +634,24 @@ func TestPrivilegedBindMount(t *testing.T) {
 			expectedCgroupFSRO: false,
 		},
 	} {
-		t.Logf("TestCase %q", desc)
+		t.Run(desc, func(t *testing.T) {
+			containerConfig.Linux.SecurityContext.Privileged = test.privileged
+			sandboxConfig.Linux.SecurityContext.Privileged = test.privileged
 
-		containerConfig.Linux.SecurityContext.Privileged = test.privileged
-		sandboxConfig.Linux.SecurityContext.Privileged = test.privileged
+			spec, err := c.containerSpec(t.Name(), testSandboxID, testPid, "", testContainerName, testImageName, containerConfig, sandboxConfig, imageConfig, nil, ociRuntime)
 
-		spec, err := c.containerSpec(t.Name(), testSandboxID, testPid, "", testContainerName, testImageName, containerConfig, sandboxConfig, imageConfig, nil, ociRuntime)
-
-		assert.NoError(t, err)
-		if test.expectedSysFSRO {
-			checkMount(t, spec.Mounts, "sysfs", "/sys", "sysfs", []string{"ro"}, []string{"rw"})
-		} else {
-			checkMount(t, spec.Mounts, "sysfs", "/sys", "sysfs", []string{"rw"}, []string{"ro"})
-		}
-		if test.expectedCgroupFSRO {
-			checkMount(t, spec.Mounts, "cgroup", "/sys/fs/cgroup", "cgroup", []string{"ro"}, []string{"rw"})
-		} else {
-			checkMount(t, spec.Mounts, "cgroup", "/sys/fs/cgroup", "cgroup", []string{"rw"}, []string{"ro"})
-		}
+			assert.NoError(t, err)
+			if test.expectedSysFSRO {
+				checkMount(t, spec.Mounts, "sysfs", "/sys", "sysfs", []string{"ro"}, []string{"rw"})
+			} else {
+				checkMount(t, spec.Mounts, "sysfs", "/sys", "sysfs", []string{"rw"}, []string{"ro"})
+			}
+			if test.expectedCgroupFSRO {
+				checkMount(t, spec.Mounts, "cgroup", "/sys/fs/cgroup", "cgroup", []string{"ro"}, []string{"rw"})
+			} else {
+				checkMount(t, spec.Mounts, "cgroup", "/sys/fs/cgroup", "cgroup", []string{"rw"}, []string{"ro"})
+			}
+		})
 	}
 }
 
@@ -737,21 +743,22 @@ func TestMountPropagation(t *testing.T) {
 			expectErr:         true,
 		},
 	} {
-		t.Logf("TestCase %q", desc)
-		c := newTestCRIService()
-		c.os.(*ostesting.FakeOS).LookupMountFn = test.fakeLookupMountFn
-		config, _, _, _ := getCreateContainerTestData()
+		t.Run(desc, func(t *testing.T) {
+			c := newTestCRIService()
+			c.os.(*ostesting.FakeOS).LookupMountFn = test.fakeLookupMountFn
+			config, _, _, _ := getCreateContainerTestData()
 
-		var spec runtimespec.Spec
-		spec.Linux = &runtimespec.Linux{}
+			var spec runtimespec.Spec
+			spec.Linux = &runtimespec.Linux{}
 
-		err := opts.WithMounts(c.os, config, []*runtime.Mount{test.criMount}, "")(context.Background(), nil, nil, &spec)
-		if test.expectErr {
-			require.Error(t, err)
-		} else {
-			require.NoError(t, err)
-			checkMount(t, spec.Mounts, test.criMount.HostPath, test.criMount.ContainerPath, "bind", test.optionsCheck, nil)
-		}
+			err := opts.WithMounts(c.os, config, []*runtime.Mount{test.criMount}, "")(context.Background(), nil, nil, &spec)
+			if test.expectErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				checkMount(t, spec.Mounts, test.criMount.HostPath, test.criMount.ContainerPath, "bind", test.optionsCheck, nil)
+			}
+		})
 	}
 }
 
@@ -788,11 +795,188 @@ func TestPidNamespace(t *testing.T) {
 			},
 		},
 	} {
-		t.Logf("TestCase %q", desc)
-		containerConfig.Linux.SecurityContext.NamespaceOptions = &runtime.NamespaceOption{Pid: test.pidNS}
-		spec, err := c.containerSpec(testID, testSandboxID, testPid, "", testContainerName, testImageName, containerConfig, sandboxConfig, imageConfig, nil, ociRuntime)
-		require.NoError(t, err)
-		assert.Contains(t, spec.Linux.Namespaces, test.expected)
+		t.Run(desc, func(t *testing.T) {
+			containerConfig.Linux.SecurityContext.NamespaceOptions = &runtime.NamespaceOption{Pid: test.pidNS}
+			spec, err := c.containerSpec(testID, testSandboxID, testPid, "", testContainerName, testImageName, containerConfig, sandboxConfig, imageConfig, nil, ociRuntime)
+			require.NoError(t, err)
+			assert.Contains(t, spec.Linux.Namespaces, test.expected)
+		})
+	}
+}
+
+func TestUserNamespace(t *testing.T) {
+	testID := "test-id"
+	testPid := uint32(1234)
+	testSandboxID := "sandbox-id"
+	testContainerName := "container-name"
+	idMap := runtime.IDMapping{
+		HostId:      1000,
+		ContainerId: 1000,
+		Length:      10,
+	}
+	otherIDMap := runtime.IDMapping{
+		HostId:      2000,
+		ContainerId: 2000,
+		Length:      10,
+	}
+	expIDMap := runtimespec.LinuxIDMapping{
+		HostID:      1000,
+		ContainerID: 1000,
+		Size:        10,
+	}
+	containerConfig, sandboxConfig, imageConfig, _ := getCreateContainerTestData()
+	ociRuntime := config.Runtime{}
+	c := newTestCRIService()
+	for desc, test := range map[string]struct {
+		userNS        *runtime.UserNamespace
+		sandboxUserNS *runtime.UserNamespace
+		expNS         *runtimespec.LinuxNamespace
+		expNotNS      *runtimespec.LinuxNamespace // Does NOT contain this namespace
+		expUIDMapping []runtimespec.LinuxIDMapping
+		expGIDMapping []runtimespec.LinuxIDMapping
+		err           bool
+	}{
+		"node namespace mode": {
+			userNS: &runtime.UserNamespace{Mode: runtime.NamespaceMode_NODE},
+			// Expect userns to NOT be present.
+			expNotNS: &runtimespec.LinuxNamespace{
+				Type: runtimespec.UserNamespace,
+				Path: opts.GetUserNamespace(testPid),
+			},
+		},
+		"node namespace mode with mappings": {
+			userNS: &runtime.UserNamespace{
+				Mode: runtime.NamespaceMode_NODE,
+				Uids: []*runtime.IDMapping{&idMap},
+				Gids: []*runtime.IDMapping{&idMap},
+			},
+			err: true,
+		},
+		"container namespace mode": {
+			userNS: &runtime.UserNamespace{Mode: runtime.NamespaceMode_CONTAINER},
+			err:    true,
+		},
+		"target namespace mode": {
+			userNS: &runtime.UserNamespace{Mode: runtime.NamespaceMode_TARGET},
+			err:    true,
+		},
+		"unknown namespace mode": {
+			userNS: &runtime.UserNamespace{Mode: runtime.NamespaceMode(100)},
+			err:    true,
+		},
+		"pod namespace mode": {
+			userNS: &runtime.UserNamespace{
+				Mode: runtime.NamespaceMode_POD,
+				Uids: []*runtime.IDMapping{&idMap},
+				Gids: []*runtime.IDMapping{&idMap},
+			},
+			expNS: &runtimespec.LinuxNamespace{
+				Type: runtimespec.UserNamespace,
+				Path: opts.GetUserNamespace(testPid),
+			},
+			expUIDMapping: []runtimespec.LinuxIDMapping{expIDMap},
+			expGIDMapping: []runtimespec.LinuxIDMapping{expIDMap},
+		},
+		"pod namespace mode with inconsistent sandbox config (different GIDs)": {
+			userNS: &runtime.UserNamespace{
+				Mode: runtime.NamespaceMode_POD,
+				Uids: []*runtime.IDMapping{&idMap},
+				Gids: []*runtime.IDMapping{&idMap},
+			},
+			sandboxUserNS: &runtime.UserNamespace{
+				Mode: runtime.NamespaceMode_POD,
+				Uids: []*runtime.IDMapping{&idMap},
+				Gids: []*runtime.IDMapping{&otherIDMap},
+			},
+			err: true,
+		},
+		"pod namespace mode with inconsistent sandbox config (different UIDs)": {
+			userNS: &runtime.UserNamespace{
+				Mode: runtime.NamespaceMode_POD,
+				Uids: []*runtime.IDMapping{&idMap},
+				Gids: []*runtime.IDMapping{&idMap},
+			},
+			sandboxUserNS: &runtime.UserNamespace{
+				Mode: runtime.NamespaceMode_POD,
+				Uids: []*runtime.IDMapping{&otherIDMap},
+				Gids: []*runtime.IDMapping{&idMap},
+			},
+			err: true,
+		},
+		"pod namespace mode with inconsistent sandbox config (different len)": {
+			userNS: &runtime.UserNamespace{
+				Mode: runtime.NamespaceMode_POD,
+				Uids: []*runtime.IDMapping{&idMap},
+				Gids: []*runtime.IDMapping{&idMap},
+			},
+			sandboxUserNS: &runtime.UserNamespace{
+				Mode: runtime.NamespaceMode_POD,
+				Uids: []*runtime.IDMapping{&idMap, &idMap},
+				Gids: []*runtime.IDMapping{&idMap, &idMap},
+			},
+			err: true,
+		},
+		"pod namespace mode with inconsistent sandbox config (different mode)": {
+			userNS: &runtime.UserNamespace{
+				Mode: runtime.NamespaceMode_POD,
+				Uids: []*runtime.IDMapping{&idMap},
+				Gids: []*runtime.IDMapping{&idMap},
+			},
+			sandboxUserNS: &runtime.UserNamespace{
+				Mode: runtime.NamespaceMode_NODE,
+				Uids: []*runtime.IDMapping{&idMap},
+				Gids: []*runtime.IDMapping{&idMap},
+			},
+			err: true,
+		},
+		"pod namespace mode with several mappings": {
+			userNS: &runtime.UserNamespace{
+				Mode: runtime.NamespaceMode_POD,
+				Uids: []*runtime.IDMapping{&idMap, &idMap},
+				Gids: []*runtime.IDMapping{&idMap, &idMap},
+			},
+			err: true,
+		},
+		"pod namespace mode with uneven mappings": {
+			userNS: &runtime.UserNamespace{
+				Mode: runtime.NamespaceMode_POD,
+				Uids: []*runtime.IDMapping{&idMap, &idMap},
+				Gids: []*runtime.IDMapping{&idMap},
+			},
+			err: true,
+		},
+	} {
+		desc := desc
+		test := test
+		t.Run(desc, func(t *testing.T) {
+			containerConfig.Linux.SecurityContext.NamespaceOptions = &runtime.NamespaceOption{UsernsOptions: test.userNS}
+			// By default, set sandbox and container config to the same (this is
+			// required by containerSpec). However, if the test wants to test for what
+			// happens when they don't match, the test.sandboxUserNS should be set and
+			// we just use that.
+			sandboxUserns := test.userNS
+			if test.sandboxUserNS != nil {
+				sandboxUserns = test.sandboxUserNS
+			}
+			sandboxConfig.Linux.SecurityContext.NamespaceOptions = &runtime.NamespaceOption{UsernsOptions: sandboxUserns}
+			spec, err := c.containerSpec(testID, testSandboxID, testPid, "", testContainerName, testImageName, containerConfig, sandboxConfig, imageConfig, nil, ociRuntime)
+
+			if test.err {
+				require.Error(t, err)
+				assert.Nil(t, spec)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, spec.Linux.UIDMappings, test.expUIDMapping)
+			assert.Equal(t, spec.Linux.GIDMappings, test.expGIDMapping)
+
+			if test.expNS != nil {
+				assert.Contains(t, spec.Linux.Namespaces, *test.expNS)
+			}
+			if test.expNotNS != nil {
+				assert.NotContains(t, spec.Linux.Namespaces, *test.expNotNS)
+			}
+		})
 	}
 }
 
@@ -921,7 +1105,7 @@ func TestGenerateSeccompSecurityProfileSpecOpts(t *testing.T) {
 			},
 		},
 	} {
-		t.Run(fmt.Sprintf("TestCase %q", desc), func(t *testing.T) {
+		t.Run(desc, func(t *testing.T) {
 			cri := &criService{}
 			cri.config.UnsetSeccompProfile = test.defaultProfile
 			ssp := test.sp
@@ -1074,29 +1258,30 @@ func TestGenerateApparmorSpecOpts(t *testing.T) {
 			},
 		},
 	} {
-		t.Logf("TestCase %q", desc)
-		asp := test.sp
-		csp, err := generateApparmorSecurityProfile(test.profile)
-		if err != nil {
-			if test.expectErr {
-				assert.Error(t, err)
+		t.Run(desc, func(t *testing.T) {
+			asp := test.sp
+			csp, err := generateApparmorSecurityProfile(test.profile)
+			if err != nil {
+				if test.expectErr {
+					assert.Error(t, err)
+				} else {
+					assert.NoError(t, err)
+				}
 			} else {
-				assert.NoError(t, err)
+				if asp == nil {
+					asp = csp
+				}
+				specOpts, err := generateApparmorSpecOpts(asp, test.privileged, !test.disable)
+				assert.Equal(t,
+					reflect.ValueOf(test.specOpts).Pointer(),
+					reflect.ValueOf(specOpts).Pointer())
+				if test.expectErr {
+					assert.Error(t, err)
+				} else {
+					assert.NoError(t, err)
+				}
 			}
-		} else {
-			if asp == nil {
-				asp = csp
-			}
-			specOpts, err := generateApparmorSpecOpts(asp, test.privileged, !test.disable)
-			assert.Equal(t,
-				reflect.ValueOf(test.specOpts).Pointer(),
-				reflect.ValueOf(specOpts).Pointer())
-			if test.expectErr {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-			}
-		}
+		})
 	}
 }
 
@@ -1170,21 +1355,22 @@ func TestMaskedAndReadonlyPaths(t *testing.T) {
 			privileged:       true,
 		},
 	} {
-		t.Logf("TestCase %q", desc)
-		c.config.DisableProcMount = test.disableProcMount
-		containerConfig.Linux.SecurityContext.MaskedPaths = test.masked
-		containerConfig.Linux.SecurityContext.ReadonlyPaths = test.readonly
-		containerConfig.Linux.SecurityContext.Privileged = test.privileged
-		sandboxConfig.Linux.SecurityContext = &runtime.LinuxSandboxSecurityContext{
-			Privileged: test.privileged,
-		}
-		spec, err := c.containerSpec(testID, testSandboxID, testPid, "", testContainerName, testImageName, containerConfig, sandboxConfig, imageConfig, nil, ociRuntime)
-		require.NoError(t, err)
-		if !test.privileged { // specCheck presumes an unprivileged container
-			specCheck(t, testID, testSandboxID, testPid, spec)
-		}
-		assert.Equal(t, test.expectedMasked, spec.Linux.MaskedPaths)
-		assert.Equal(t, test.expectedReadonly, spec.Linux.ReadonlyPaths)
+		t.Run(desc, func(t *testing.T) {
+			c.config.DisableProcMount = test.disableProcMount
+			containerConfig.Linux.SecurityContext.MaskedPaths = test.masked
+			containerConfig.Linux.SecurityContext.ReadonlyPaths = test.readonly
+			containerConfig.Linux.SecurityContext.Privileged = test.privileged
+			sandboxConfig.Linux.SecurityContext = &runtime.LinuxSandboxSecurityContext{
+				Privileged: test.privileged,
+			}
+			spec, err := c.containerSpec(testID, testSandboxID, testPid, "", testContainerName, testImageName, containerConfig, sandboxConfig, imageConfig, nil, ociRuntime)
+			require.NoError(t, err)
+			if !test.privileged { // specCheck presumes an unprivileged container
+				specCheck(t, testID, testSandboxID, testPid, spec)
+			}
+			assert.Equal(t, test.expectedMasked, spec.Linux.MaskedPaths)
+			assert.Equal(t, test.expectedReadonly, spec.Linux.ReadonlyPaths)
+		})
 	}
 }
 
@@ -1220,15 +1406,16 @@ func TestHostname(t *testing.T) {
 			expectedEnv: "HOSTNAME=real-hostname",
 		},
 	} {
-		t.Logf("TestCase %q", desc)
-		sandboxConfig.Hostname = test.hostname
-		sandboxConfig.Linux.SecurityContext = &runtime.LinuxSandboxSecurityContext{
-			NamespaceOptions: &runtime.NamespaceOption{Network: test.networkNs},
-		}
-		spec, err := c.containerSpec(testID, testSandboxID, testPid, "", testContainerName, testImageName, containerConfig, sandboxConfig, imageConfig, nil, ociRuntime)
-		require.NoError(t, err)
-		specCheck(t, testID, testSandboxID, testPid, spec)
-		assert.Contains(t, spec.Process.Env, test.expectedEnv)
+		t.Run(desc, func(t *testing.T) {
+			sandboxConfig.Hostname = test.hostname
+			sandboxConfig.Linux.SecurityContext = &runtime.LinuxSandboxSecurityContext{
+				NamespaceOptions: &runtime.NamespaceOption{Network: test.networkNs},
+			}
+			spec, err := c.containerSpec(testID, testSandboxID, testPid, "", testContainerName, testImageName, containerConfig, sandboxConfig, imageConfig, nil, ociRuntime)
+			require.NoError(t, err)
+			specCheck(t, testID, testSandboxID, testPid, spec)
+			assert.Contains(t, spec.Process.Env, test.expectedEnv)
+		})
 	}
 }
 
@@ -1445,24 +1632,24 @@ func TestNonRootUserAndDevices(t *testing.T) {
 			expectedDeviceGID:                  *testDevice.GID,
 		},
 	} {
-		t.Logf("TestCase %q", desc)
+		t.Run(desc, func(t *testing.T) {
+			c.config.DeviceOwnershipFromSecurityContext = test.deviceOwnershipFromSecurityContext
+			containerConfig.Linux.SecurityContext.RunAsUser = test.uid
+			containerConfig.Linux.SecurityContext.RunAsGroup = test.gid
+			containerConfig.Devices = []*runtime.Device{
+				{
+					ContainerPath: testDevice.Path,
+					HostPath:      testDevice.Path,
+					Permissions:   "r",
+				},
+			}
 
-		c.config.DeviceOwnershipFromSecurityContext = test.deviceOwnershipFromSecurityContext
-		containerConfig.Linux.SecurityContext.RunAsUser = test.uid
-		containerConfig.Linux.SecurityContext.RunAsGroup = test.gid
-		containerConfig.Devices = []*runtime.Device{
-			{
-				ContainerPath: testDevice.Path,
-				HostPath:      testDevice.Path,
-				Permissions:   "r",
-			},
-		}
+			spec, err := c.containerSpec(t.Name(), testSandboxID, testPid, "", testContainerName, testImageName, containerConfig, sandboxConfig, imageConfig, nil, config.Runtime{})
+			assert.NoError(t, err)
 
-		spec, err := c.containerSpec(t.Name(), testSandboxID, testPid, "", testContainerName, testImageName, containerConfig, sandboxConfig, imageConfig, nil, config.Runtime{})
-		assert.NoError(t, err)
-
-		assert.Equal(t, test.expectedDeviceUID, *spec.Linux.Devices[0].UID)
-		assert.Equal(t, test.expectedDeviceGID, *spec.Linux.Devices[0].GID)
+			assert.Equal(t, test.expectedDeviceUID, *spec.Linux.Devices[0].UID)
+			assert.Equal(t, test.expectedDeviceGID, *spec.Linux.Devices[0].GID)
+		})
 	}
 }
 
@@ -1474,57 +1661,79 @@ func TestPrivilegedDevices(t *testing.T) {
 	containerConfig, sandboxConfig, imageConfig, _ := getCreateContainerTestData()
 
 	for desc, test := range map[string]struct {
-		privileged                   bool
-		privilegedWithoutHostDevices bool
-		expectHostDevices            bool
+		privileged                                    bool
+		privilegedWithoutHostDevices                  bool
+		privilegedWithoutHostDevicesAllDevicesAllowed bool
+		expectHostDevices                             bool
+		expectAllDevicesAllowed                       bool
 	}{
 		"expect no host devices when privileged is false": {
 			privileged:                   false,
 			privilegedWithoutHostDevices: false,
-			expectHostDevices:            false,
+			privilegedWithoutHostDevicesAllDevicesAllowed: false,
+			expectHostDevices:       false,
+			expectAllDevicesAllowed: false,
 		},
 		"expect no host devices when privileged is false and privilegedWithoutHostDevices is true": {
 			privileged:                   false,
 			privilegedWithoutHostDevices: true,
-			expectHostDevices:            false,
+			privilegedWithoutHostDevicesAllDevicesAllowed: false,
+			expectHostDevices:       false,
+			expectAllDevicesAllowed: false,
 		},
-		"expect host devices when privileged is true": {
+		"expect host devices and all device allowlist when privileged is true": {
 			privileged:                   true,
 			privilegedWithoutHostDevices: false,
-			expectHostDevices:            true,
+			privilegedWithoutHostDevicesAllDevicesAllowed: false,
+			expectHostDevices:       true,
+			expectAllDevicesAllowed: true,
 		},
 		"expect no host devices when privileged is true and privilegedWithoutHostDevices is true": {
 			privileged:                   true,
 			privilegedWithoutHostDevices: true,
-			expectHostDevices:            false,
+			privilegedWithoutHostDevicesAllDevicesAllowed: false,
+			expectHostDevices:       false,
+			expectAllDevicesAllowed: false,
+		},
+		"expect host devices and all devices allowlist when privileged is true and privilegedWithoutHostDevices is true and privilegedWithoutHostDevicesAllDevicesAllowed is true": {
+			privileged:                   true,
+			privilegedWithoutHostDevices: true,
+			privilegedWithoutHostDevicesAllDevicesAllowed: true,
+			expectHostDevices:       false,
+			expectAllDevicesAllowed: true,
 		},
 	} {
-		t.Logf("TestCase %q", desc)
+		t.Run(desc, func(t *testing.T) {
+			containerConfig.Linux.SecurityContext.Privileged = test.privileged
+			sandboxConfig.Linux.SecurityContext.Privileged = test.privileged
 
-		containerConfig.Linux.SecurityContext.Privileged = test.privileged
-		sandboxConfig.Linux.SecurityContext.Privileged = test.privileged
-
-		ociRuntime := config.Runtime{
-			PrivilegedWithoutHostDevices: test.privilegedWithoutHostDevices,
-		}
-		spec, err := c.containerSpec(t.Name(), testSandboxID, testPid, "", testContainerName, testImageName, containerConfig, sandboxConfig, imageConfig, nil, ociRuntime)
-		assert.NoError(t, err)
-
-		hostDevicesRaw, err := oci.HostDevices()
-		assert.NoError(t, err)
-		var hostDevices = make([]string, 0)
-		for _, dev := range hostDevicesRaw {
-			// https://github.com/containerd/cri/pull/1521#issuecomment-652807951
-			if dev.Major != 0 {
-				hostDevices = append(hostDevices, dev.Path)
+			ociRuntime := config.Runtime{
+				PrivilegedWithoutHostDevices:                  test.privilegedWithoutHostDevices,
+				PrivilegedWithoutHostDevicesAllDevicesAllowed: test.privilegedWithoutHostDevicesAllDevicesAllowed,
 			}
-		}
+			spec, err := c.containerSpec(t.Name(), testSandboxID, testPid, "", testContainerName, testImageName, containerConfig, sandboxConfig, imageConfig, nil, ociRuntime)
+			assert.NoError(t, err)
 
-		if test.expectHostDevices {
-			assert.Len(t, spec.Linux.Devices, len(hostDevices))
-		} else {
-			assert.Empty(t, spec.Linux.Devices)
-		}
+			hostDevicesRaw, err := oci.HostDevices()
+			assert.NoError(t, err)
+			var hostDevices = make([]string, 0)
+			for _, dev := range hostDevicesRaw {
+				// https://github.com/containerd/cri/pull/1521#issuecomment-652807951
+				if dev.Major != 0 {
+					hostDevices = append(hostDevices, dev.Path)
+				}
+			}
+
+			if test.expectHostDevices {
+				assert.Len(t, spec.Linux.Devices, len(hostDevices))
+			} else {
+				assert.Empty(t, spec.Linux.Devices)
+			}
+
+			assert.Len(t, spec.Linux.Resources.Devices, 1)
+			assert.Equal(t, spec.Linux.Resources.Devices[0].Allow, test.expectAllDevicesAllowed)
+			assert.Equal(t, spec.Linux.Resources.Devices[0].Access, "rwm")
+		})
 	}
 }
 
@@ -1568,4 +1777,356 @@ func TestBaseOCISpec(t *testing.T) {
 	assert.Len(t, spec.Process.Capabilities.Permitted, 1)
 
 	assert.Equal(t, *spec.Linux.Resources.Memory.Limit, containerConfig.Linux.Resources.MemoryLimitInBytes)
+}
+
+func writeFilesToTempDir(tmpDirPattern string, content []string) (string, error) {
+	if len(content) == 0 {
+		return "", nil
+	}
+
+	dir, err := os.MkdirTemp("", tmpDirPattern)
+	if err != nil {
+		return "", err
+	}
+
+	for idx, data := range content {
+		file := filepath.Join(dir, fmt.Sprintf("spec-%d.yaml", idx))
+		err := os.WriteFile(file, []byte(data), 0644)
+		if err != nil {
+			return "", err
+		}
+	}
+
+	return dir, nil
+}
+
+func TestCDIInjections(t *testing.T) {
+	testID := "test-id"
+	testSandboxID := "sandbox-id"
+	testContainerName := "container-name"
+	testPid := uint32(1234)
+	containerConfig, sandboxConfig, imageConfig, specCheck := getCreateContainerTestData()
+	ociRuntime := config.Runtime{}
+	c := newTestCRIService()
+	testContainer := &containers.Container{ID: "64ddfe361f0099f8d59075398feeb3dcb3863b6851df7b946744755066c03e9d"}
+	ctx := context.Background()
+
+	for _, test := range []struct {
+		description   string
+		cdiSpecFiles  []string
+		cdiDevices    []*runtime.CDIDevice
+		annotations   map[string]string
+		expectError   bool
+		expectDevices []runtimespec.LinuxDevice
+		expectEnv     []string
+	}{
+		{description: "expect no CDI error for nil annotations",
+			cdiDevices: []*runtime.CDIDevice{},
+		},
+		{description: "expect no CDI error for nil CDIDevices",
+			annotations: map[string]string{},
+		},
+		{description: "expect no CDI error for empty CDI devices and annotations",
+			cdiDevices:  []*runtime.CDIDevice{},
+			annotations: map[string]string{},
+		},
+		{description: "expect CDI error for invalid CDI device reference in annotations",
+			annotations: map[string]string{
+				cdi.AnnotationPrefix + "devices": "foobar",
+			},
+			expectError: true,
+		},
+		{description: "expect CDI error for invalid CDI device reference in CDIDevices",
+			cdiDevices: []*runtime.CDIDevice{
+				{Name: "foobar"},
+			},
+			expectError: true,
+		},
+		{description: "expect CDI error for unresolvable devices in annotations",
+			annotations: map[string]string{
+				cdi.AnnotationPrefix + "vendor1_devices": "vendor1.com/device=no-such-dev",
+			},
+			expectError: true,
+		},
+		{description: "expect CDI error for unresolvable devices in CDIDevices",
+			cdiDevices: []*runtime.CDIDevice{
+				{Name: "vendor1.com/device=no-such-dev"},
+			},
+			expectError: true,
+		},
+		{description: "expect properly injected resolvable CDI devices from annotations",
+			cdiSpecFiles: []string{
+				`
+cdiVersion: "0.3.0"
+kind: "vendor1.com/device"
+devices:
+  - name: foo
+    containerEdits:
+      deviceNodes:
+        - path: /dev/loop8
+          type: b
+          major: 7
+          minor: 8
+      env:
+        - FOO=injected
+containerEdits:
+  env:
+    - "VENDOR1=present"
+`,
+				`
+cdiVersion: "0.3.0"
+kind: "vendor2.com/device"
+devices:
+  - name: bar
+    containerEdits:
+      deviceNodes:
+        - path: /dev/loop9
+          type: b
+          major: 7
+          minor: 9
+      env:
+        - BAR=injected
+containerEdits:
+  env:
+    - "VENDOR2=present"
+`,
+			},
+			annotations: map[string]string{
+				cdi.AnnotationPrefix + "vendor1_devices": "vendor1.com/device=foo",
+				cdi.AnnotationPrefix + "vendor2_devices": "vendor2.com/device=bar",
+			},
+			expectDevices: []runtimespec.LinuxDevice{
+				{
+					Path:  "/dev/loop8",
+					Type:  "b",
+					Major: 7,
+					Minor: 8,
+				},
+				{
+					Path:  "/dev/loop9",
+					Type:  "b",
+					Major: 7,
+					Minor: 9,
+				},
+			},
+			expectEnv: []string{
+				"FOO=injected",
+				"VENDOR1=present",
+				"BAR=injected",
+				"VENDOR2=present",
+			},
+		},
+		{description: "expect properly injected resolvable CDI devices from CDIDevices",
+			cdiSpecFiles: []string{
+				`
+cdiVersion: "0.3.0"
+kind: "vendor1.com/device"
+devices:
+  - name: foo
+    containerEdits:
+      deviceNodes:
+        - path: /dev/loop8
+          type: b
+          major: 7
+          minor: 8
+      env:
+        - FOO=injected
+containerEdits:
+  env:
+    - "VENDOR1=present"
+`,
+				`
+cdiVersion: "0.3.0"
+kind: "vendor2.com/device"
+devices:
+  - name: bar
+    containerEdits:
+      deviceNodes:
+        - path: /dev/loop9
+          type: b
+          major: 7
+          minor: 9
+      env:
+        - BAR=injected
+containerEdits:
+  env:
+    - "VENDOR2=present"
+`,
+			},
+			cdiDevices: []*runtime.CDIDevice{
+				{Name: "vendor1.com/device=foo"},
+				{Name: "vendor2.com/device=bar"},
+			},
+			expectDevices: []runtimespec.LinuxDevice{
+				{
+					Path:  "/dev/loop8",
+					Type:  "b",
+					Major: 7,
+					Minor: 8,
+				},
+				{
+					Path:  "/dev/loop9",
+					Type:  "b",
+					Major: 7,
+					Minor: 9,
+				},
+			},
+			expectEnv: []string{
+				"FOO=injected",
+				"VENDOR1=present",
+				"BAR=injected",
+				"VENDOR2=present",
+			},
+		},
+		{description: "expect CDI devices from CDIDevices and annotations",
+			cdiSpecFiles: []string{
+				`
+cdiVersion: "0.3.0"
+kind: "vendor1.com/device"
+devices:
+  - name: foo
+    containerEdits:
+      deviceNodes:
+        - path: /dev/loop8
+          type: b
+          major: 7
+          minor: 8
+      env:
+        - FOO=injected
+containerEdits:
+  env:
+    - "VENDOR1=present"
+`,
+				`
+cdiVersion: "0.3.0"
+kind: "vendor2.com/device"
+devices:
+  - name: bar
+    containerEdits:
+      deviceNodes:
+        - path: /dev/loop9
+          type: b
+          major: 7
+          minor: 9
+      env:
+        - BAR=injected
+containerEdits:
+  env:
+    - "VENDOR2=present"
+`,
+				`
+cdiVersion: "0.3.0"
+kind: "vendor3.com/device"
+devices:
+  - name: foo3
+    containerEdits:
+      deviceNodes:
+        - path: /dev/loop10
+          type: b
+          major: 7
+          minor: 10
+      env:
+        - FOO3=injected
+containerEdits:
+  env:
+    - "VENDOR3=present"
+`,
+				`
+cdiVersion: "0.3.0"
+kind: "vendor4.com/device"
+devices:
+  - name: bar4
+    containerEdits:
+      deviceNodes:
+        - path: /dev/loop11
+          type: b
+          major: 7
+          minor: 11
+      env:
+        - BAR4=injected
+containerEdits:
+  env:
+    - "VENDOR4=present"
+`,
+			},
+			cdiDevices: []*runtime.CDIDevice{
+				{Name: "vendor1.com/device=foo"},
+				{Name: "vendor2.com/device=bar"},
+				{Name: "vendor3.com/device=foo3"},
+			},
+			annotations: map[string]string{
+				cdi.AnnotationPrefix + "vendor3_devices": "vendor3.com/device=foo3", // Duplicated device, should be ignored
+				cdi.AnnotationPrefix + "vendor4_devices": "vendor4.com/device=bar4",
+			},
+			expectDevices: []runtimespec.LinuxDevice{
+				{
+					Path:  "/dev/loop8",
+					Type:  "b",
+					Major: 7,
+					Minor: 8,
+				},
+				{
+					Path:  "/dev/loop9",
+					Type:  "b",
+					Major: 7,
+					Minor: 9,
+				},
+				{
+					Path:  "/dev/loop10",
+					Type:  "b",
+					Major: 7,
+					Minor: 10,
+				},
+				{
+					Path:  "/dev/loop11",
+					Type:  "b",
+					Major: 7,
+					Minor: 11,
+				},
+			},
+			expectEnv: []string{
+				"FOO=injected",
+				"VENDOR1=present",
+				"BAR=injected",
+				"VENDOR2=present",
+				"FOO3=injected",
+				"VENDOR3=present",
+				"BAR4=injected",
+				"VENDOR4=present",
+			},
+		},
+	} {
+		t.Run(test.description, func(t *testing.T) {
+			spec, err := c.containerSpec(testID, testSandboxID, testPid, "", testContainerName, testImageName, containerConfig, sandboxConfig, imageConfig, nil, ociRuntime)
+			require.NoError(t, err)
+
+			specCheck(t, testID, testSandboxID, testPid, spec)
+
+			cdiDir, err := writeFilesToTempDir("containerd-test-CDI-injections-", test.cdiSpecFiles)
+			if cdiDir != "" {
+				defer os.RemoveAll(cdiDir)
+			}
+			require.NoError(t, err)
+
+			err = cdi.Configure(cdi.WithSpecDirs(cdiDir))
+			require.NoError(t, err)
+
+			injectFun := customopts.WithCDI(test.annotations, test.cdiDevices)
+			err = injectFun(ctx, nil, testContainer, spec)
+			assert.Equal(t, test.expectError, err != nil)
+
+			if err != nil {
+				if test.expectEnv != nil {
+					for _, expectedEnv := range test.expectEnv {
+						assert.Contains(t, spec.Process.Env, expectedEnv)
+					}
+				}
+				if test.expectDevices != nil {
+					for _, expectedDev := range test.expectDevices {
+						assert.Contains(t, spec.Linux.Devices, expectedDev)
+					}
+				}
+			}
+		})
+	}
 }

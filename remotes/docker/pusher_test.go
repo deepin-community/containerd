@@ -17,7 +17,9 @@
 package docker
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -31,8 +33,11 @@ import (
 
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/errdefs"
+	"github.com/containerd/containerd/reference"
 	"github.com/containerd/containerd/remotes"
+	"github.com/containerd/log/logtest"
 	"github.com/opencontainers/go-digest"
+	ocispecv "github.com/opencontainers/image-spec/specs-go"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/assert"
 )
@@ -69,7 +74,7 @@ func TestGetManifestPath(t *testing.T) {
 func TestPusherErrClosedRetry(t *testing.T) {
 	ctx := context.Background()
 
-	p, reg, done := samplePusher(t)
+	p, reg, _, done := samplePusher(t)
 	defer done()
 
 	layerContent := []byte("test")
@@ -85,10 +90,46 @@ func TestPusherErrClosedRetry(t *testing.T) {
 	}
 }
 
+func TestPusherHTTPFallback(t *testing.T) {
+	ctx := logtest.WithT(context.Background(), t)
+
+	p, reg, _, done := samplePusher(t)
+	defer done()
+
+	reg.uploadable = true
+	reg.username = "testuser"
+	reg.secret = "testsecret"
+	reg.locationPrefix = p.hosts[0].Scheme + "://" + p.hosts[0].Host
+
+	p.hosts[0].Scheme = "https"
+	client := p.hosts[0].Client
+	if client == nil {
+		clientC := *http.DefaultClient
+		client = &clientC
+	}
+	if client.Transport == nil {
+		client.Transport = http.DefaultTransport
+	}
+	client.Transport = NewHTTPFallback(client.Transport)
+	p.hosts[0].Client = client
+	phost := p.hosts[0].Host
+	p.hosts[0].Authorizer = NewDockerAuthorizer(WithAuthCreds(func(host string) (string, string, error) {
+		if host == phost {
+			return "testuser", "testsecret", nil
+		}
+		return "", "", nil
+	}))
+
+	layerContent := []byte("test")
+	if err := tryUpload(ctx, t, p, layerContent); err != nil {
+		t.Errorf("upload failed: %v", err)
+	}
+}
+
 // TestPusherErrReset tests the push method if the request needs to be retried
 // i.e when ErrReset occurs
 func TestPusherErrReset(t *testing.T) {
-	p, reg, done := samplePusher(t)
+	p, reg, _, done := samplePusher(t)
 	defer done()
 
 	p.object = "latest@sha256:55d31f3af94c797b65b310569803cacc1c9f4a34bf61afcdc8138f89345c8308"
@@ -143,13 +184,58 @@ func tryUpload(ctx context.Context, t *testing.T, p dockerPusher, layerContent [
 		return err
 	}
 	defer cw.Close()
-	if _, err := cw.Write(layerContent); err != nil {
+	if err := content.Copy(ctx, cw, bytes.NewReader(layerContent), int64(len(layerContent)), desc.Digest); err != nil {
 		return err
 	}
-	return cw.Commit(ctx, 0, "")
+
+	cContent, err := json.Marshal(ocispec.Image{})
+	if err != nil {
+		return err
+	}
+	cdesc := ocispec.Descriptor{
+		MediaType: ocispec.MediaTypeImageConfig,
+		Digest:    digest.FromBytes(cContent),
+		Size:      int64(len(cContent)),
+	}
+	cwc, err := p.Writer(ctx, content.WithRef("test-1-c"), content.WithDescriptor(cdesc))
+	if err != nil {
+		return err
+	}
+	defer cwc.Close()
+	if _, err := cwc.Write(cContent); err != nil {
+		return err
+	}
+	if err := content.Copy(ctx, cwc, bytes.NewReader(cContent), int64(len(cContent)), cdesc.Digest); err != nil {
+		return err
+	}
+
+	m := ocispec.Manifest{
+		Versioned: ocispecv.Versioned{SchemaVersion: 1},
+		MediaType: ocispec.MediaTypeImageManifest,
+		Config:    cdesc,
+		Layers:    []ocispec.Descriptor{desc},
+	}
+	mContent, err := json.Marshal(m)
+	if err != nil {
+		return err
+	}
+	mdesc := ocispec.Descriptor{
+		MediaType: ocispec.MediaTypeImageManifest,
+		Digest:    digest.FromBytes(mContent),
+		Size:      int64(len(mContent)),
+	}
+	cwm, err := p.Writer(ctx, content.WithRef("test-1-m"), content.WithDescriptor(mdesc))
+	if err != nil {
+		return err
+	}
+	defer cwm.Close()
+	if err := content.Copy(ctx, cwm, bytes.NewReader(mContent), int64(len(mContent)), mdesc.Digest); err != nil {
+		return err
+	}
+	return nil
 }
 
-func samplePusher(t *testing.T) (dockerPusher, *uploadableMockRegistry, func()) {
+func samplePusher(t *testing.T) (dockerPusher, *uploadableMockRegistry, StatusTrackLocker, func()) {
 	reg := &uploadableMockRegistry{
 		availableContents: make([]string, 0),
 	}
@@ -158,9 +244,13 @@ func samplePusher(t *testing.T) (dockerPusher, *uploadableMockRegistry, func()) 
 	if err != nil {
 		t.Fatal(err)
 	}
+	tracker := NewInMemoryTracker()
 	return dockerPusher{
 		dockerBase: &dockerBase{
-			repository: "sample",
+			refspec: reference.Spec{
+				Locator: "example.com/samplerepository:latest",
+			},
+			repository: "samplerepository",
 			hosts: []RegistryHost{
 				{
 					Client:       s.Client(),
@@ -171,9 +261,9 @@ func samplePusher(t *testing.T) (dockerPusher, *uploadableMockRegistry, func()) 
 				},
 			},
 		},
-		object:  "sample",
-		tracker: NewInMemoryTracker(),
-	}, reg, s.Close
+		object:  "latest",
+		tracker: tracker,
+	}, reg, tracker, s.Close
 }
 
 var manifestRegexp = regexp.MustCompile(`/([a-z0-9]+)/manifests/(.*)`)
@@ -184,9 +274,20 @@ type uploadableMockRegistry struct {
 	availableContents []string
 	uploadable        bool
 	putHandlerFunc    func(w http.ResponseWriter, r *http.Request) bool
+	locationPrefix    string
+	username          string
+	secret            string
 }
 
 func (u *uploadableMockRegistry) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if u.secret != "" {
+		user, pass, ok := r.BasicAuth()
+		if !ok || user != u.username || pass != u.secret {
+			w.Header().Add("WWW-Authenticate", "basic realm=test")
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+	}
 	if r.Method == http.MethodPut && u.putHandlerFunc != nil {
 		// if true return the response witout calling default handler
 		if u.putHandlerFunc(w, r) {
@@ -200,15 +301,25 @@ func (u *uploadableMockRegistry) defaultHandler(w http.ResponseWriter, r *http.R
 	if r.Method == http.MethodPost {
 		if matches := blobUploadRegexp.FindStringSubmatch(r.URL.Path); len(matches) != 0 {
 			if u.uploadable {
-				w.Header().Set("Location", "/upload")
+				w.Header().Set("Location", u.locationPrefix+"/upload")
 			} else {
-				w.Header().Set("Location", "/cannotupload")
+				w.Header().Set("Location", u.locationPrefix+"/cannotupload")
 			}
+
 			dgstr := digest.Canonical.Digester()
+
 			if _, err := io.Copy(dgstr.Hash(), r.Body); err != nil {
 				w.WriteHeader(http.StatusInternalServerError)
 				return
 			}
+
+			query := r.URL.Query()
+			if query.Has("mount") && query.Get("from") == "always-mount" {
+				w.Header().Set("Docker-Content-Digest", dgstr.Digest().String())
+				w.WriteHeader(http.StatusCreated)
+				return
+			}
+
 			u.availableContents = append(u.availableContents, dgstr.Digest().String())
 			w.WriteHeader(http.StatusAccepted)
 			return
@@ -262,7 +373,7 @@ func (u *uploadableMockRegistry) isContentAlreadyExist(c string) bool {
 
 func Test_dockerPusher_push(t *testing.T) {
 
-	p, reg, done := samplePusher(t)
+	p, reg, tracker, done := samplePusher(t)
 	defer done()
 
 	reg.uploadable = true
@@ -280,6 +391,7 @@ func Test_dockerPusher_push(t *testing.T) {
 		mediatype         string
 		ref               string
 		unavailableOnFail bool
+		annotations       map[string]string
 	}
 	tests := []struct {
 		name             string
@@ -288,6 +400,7 @@ func Test_dockerPusher_push(t *testing.T) {
 		args             args
 		checkerFunc      func(writer *pushWriter) bool
 		wantErr          error
+		wantStatus       *PushStatus
 	}{
 		{
 			name:             "when a manifest is pushed",
@@ -321,6 +434,68 @@ func Test_dockerPusher_push(t *testing.T) {
 				unavailableOnFail: false,
 			},
 			wantErr: fmt.Errorf("content %v on remote: %w", digest.FromBytes(manifestContent), errdefs.ErrAlreadyExists),
+			wantStatus: &PushStatus{
+				Exists:      true,
+				MountedFrom: "",
+			},
+		},
+		{
+			name: "success cross-repo mount a blob layer",
+			dp:   p,
+			// Not needed to set the base object as it is used to generate path only in case of manifests
+			// dockerBaseObject:
+			args: args{
+				content:           layerContent,
+				mediatype:         ocispec.MediaTypeImageLayer,
+				ref:               fmt.Sprintf("layer2-%s", layerContentDigest.String()),
+				unavailableOnFail: false,
+				annotations: map[string]string{
+					distributionSourceLabelKey("example.com"): "always-mount",
+				},
+			},
+			checkerFunc: func(writer *pushWriter) bool {
+				select {
+				case resp := <-writer.respC:
+					// 201 should be the response code when uploading a new blob
+					return resp.StatusCode == http.StatusCreated
+				case <-writer.errC:
+					return false
+				}
+			},
+			wantErr: fmt.Errorf("content %v on remote: %w", digest.FromBytes(layerContent), errdefs.ErrAlreadyExists),
+			wantStatus: &PushStatus{
+				MountedFrom: "example.com/always-mount",
+				Exists:      false,
+			},
+		},
+		{
+			name: "failed to cross-repo mount a blob layer",
+			dp:   p,
+			// Not needed to set the base object as it is used to generate path only in case of manifests
+			// dockerBaseObject:
+			args: args{
+				content:           layerContent,
+				mediatype:         ocispec.MediaTypeImageLayer,
+				ref:               fmt.Sprintf("layer3-%s", layerContentDigest.String()),
+				unavailableOnFail: false,
+				annotations: map[string]string{
+					distributionSourceLabelKey("example.com"): "never-mount",
+				},
+			},
+			checkerFunc: func(writer *pushWriter) bool {
+				select {
+				case resp := <-writer.respC:
+					// 201 should be the response code when uploading a new blob
+					return resp.StatusCode == http.StatusCreated
+				case <-writer.errC:
+					return false
+				}
+			},
+			wantErr: nil,
+			wantStatus: &PushStatus{
+				MountedFrom: "",
+				Exists:      false,
+			},
 		},
 		{
 			name: "trying to push a blob layer",
@@ -343,14 +518,20 @@ func Test_dockerPusher_push(t *testing.T) {
 				}
 			},
 			wantErr: nil,
+			wantStatus: &PushStatus{
+				MountedFrom: "",
+				Exists:      false,
+			},
 		},
 	}
 	for _, test := range tests {
+		test := test
 		t.Run(test.name, func(t *testing.T) {
 			desc := ocispec.Descriptor{
-				MediaType: test.args.mediatype,
-				Digest:    digest.FromBytes(test.args.content),
-				Size:      int64(len(test.args.content)),
+				MediaType:   test.args.mediatype,
+				Digest:      digest.FromBytes(test.args.content),
+				Size:        int64(len(test.args.content)),
+				Annotations: test.args.annotations,
 			}
 
 			test.dp.object = test.dockerBaseObject
@@ -358,6 +539,13 @@ func Test_dockerPusher_push(t *testing.T) {
 			got, err := test.dp.push(context.Background(), desc, test.args.ref, test.args.unavailableOnFail)
 
 			assert.Equal(t, test.wantErr, err)
+
+			if test.wantStatus != nil {
+				status, err := tracker.GetStatus(test.args.ref)
+				assert.NoError(t, err)
+				assert.Equal(t, *test.wantStatus, status.PushStatus)
+			}
+
 			// if an error is expected, further comparisons are not required.
 			if test.wantErr != nil {
 				return

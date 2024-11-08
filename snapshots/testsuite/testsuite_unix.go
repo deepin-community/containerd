@@ -1,5 +1,4 @@
 //go:build !windows
-// +build !windows
 
 /*
    Copyright The containerd Authors.
@@ -19,7 +18,9 @@
 
 package testsuite
 
-import "syscall"
+import (
+	"syscall"
+)
 
 func clearMask() func() {
 	oldumask := syscall.Umask(0)

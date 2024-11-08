@@ -1,0 +1,35 @@
+From: Akihiro Suda <akihiro.suda.cz@hco.ntt.co.jp>
+Date: Wed, 17 May 2023 13:39:31 +0900
+Subject: go.mod: github.com/containerd/go-runc v1.1.0
+
+Signed-off-by: Akihiro Suda <akihiro.suda.cz@hco.ntt.co.jp>
+---
+ sys/reaper/reaper_unix.go | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/sys/reaper/reaper_unix.go b/sys/reaper/reaper_unix.go
+index bfc9a95..7ad69b5 100644
+--- a/sys/reaper/reaper_unix.go
++++ b/sys/reaper/reaper_unix.go
+@@ -22,6 +22,7 @@ import (
+ 	"errors"
+ 	"fmt"
+ 	"os/exec"
++	"runtime"
+ 	"sync"
+ 	"syscall"
+ 	"time"
+@@ -100,6 +101,13 @@ func (m *Monitor) Start(c *exec.Cmd) (chan runc.Exit, error) {
+ 	return ec, nil
+ }
+ 
++// StartLocked starts the command and registers the process with the reaper
++func (m *Monitor) StartLocked(c *exec.Cmd) (chan runc.Exit, error) {
++	runtime.LockOSThread()
++	defer runtime.UnlockOSThread()
++	return m.Start(c)
++}
++
+ // Wait blocks until a process is signal as dead.
+ // User should rely on the value of the exit status to determine if the
+ // command was successful or not.

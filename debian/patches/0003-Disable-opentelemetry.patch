@@ -1,0 +1,70 @@
+From: Shengjing Zhu <zhsj@debian.org>
+Date: Mon, 21 Feb 2022 00:53:36 +0800
+Subject: Disable opentelemetry
+
+go.opentelemetry.io/contrib is not packaged.
+
+Forwarded: not-needed
+---
+ services/server/server.go | 13 ++-----------
+ tracing/tracing.go        |  7 -------
+ 2 files changed, 2 insertions(+), 18 deletions(-)
+
+diff --git a/services/server/server.go b/services/server/server.go
+index 4285da8..b62eaab 100644
+--- a/services/server/server.go
++++ b/services/server/server.go
+@@ -36,10 +36,8 @@ import (
+ 
+ 	"github.com/containerd/ttrpc"
+ 	"github.com/docker/go-metrics"
+-	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
+ 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
+ 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
+-	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+ 	"google.golang.org/grpc"
+ 	"google.golang.org/grpc/backoff"
+ 	"google.golang.org/grpc/credentials"
+@@ -135,15 +133,8 @@ func New(ctx context.Context, config *srvconfig.Config) (*Server, error) {
+ 	}
+ 
+ 	serverOpts := []grpc.ServerOption{
+-		grpc.StatsHandler(otelgrpc.NewServerHandler()),
+-		grpc.StreamInterceptor(grpc_middleware.ChainStreamServer(
+-			grpc_prometheus.StreamServerInterceptor,
+-			streamNamespaceInterceptor,
+-		)),
+-		grpc.UnaryInterceptor(grpc_middleware.ChainUnaryServer(
+-			grpc_prometheus.UnaryServerInterceptor,
+-			unaryNamespaceInterceptor,
+-		)),
++		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
++		grpc.StreamInterceptor(grpc_prometheus.StreamServerInterceptor),
+ 	}
+ 	if config.GRPC.MaxRecvMsgSize > 0 {
+ 		serverOpts = append(serverOpts, grpc.MaxRecvMsgSize(config.GRPC.MaxRecvMsgSize))
+diff --git a/tracing/tracing.go b/tracing/tracing.go
+index 80d2b95..55d3546 100644
+--- a/tracing/tracing.go
++++ b/tracing/tracing.go
+@@ -20,7 +20,6 @@ import (
+ 	"context"
+ 	"net/http"
+ 
+-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+ 	"go.opentelemetry.io/otel"
+ 	"go.opentelemetry.io/otel/attribute"
+ 	"go.opentelemetry.io/otel/codes"
+@@ -50,12 +49,6 @@ func WithHTTPRequest(_ *http.Request) SpanOpt {
+ 
+ // UpdateHTTPClient updates the http client with the necessary otel transport
+ func UpdateHTTPClient(client *http.Client, name string) {
+-	client.Transport = otelhttp.NewTransport(
+-		client.Transport,
+-		otelhttp.WithSpanNameFormatter(func(operation string, r *http.Request) string {
+-			return name
+-		}),
+-	)
+ }
+ 
+ // StartSpan starts child span in a context.

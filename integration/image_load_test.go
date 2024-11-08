@@ -17,18 +17,19 @@
 package integration
 
 import (
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/containerd/containerd/integration/images"
 	"github.com/stretchr/testify/require"
-	exec "golang.org/x/sys/execabs"
 	runtime "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 
 // Test to load an image from tarball.
 func TestImageLoad(t *testing.T) {
-	testImage := GetImage(BusyBox)
+	testImage := images.Get(images.BusyBox)
 	loadedImage := testImage
 	_, err := exec.LookPath("docker")
 	if err != nil {

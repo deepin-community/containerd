@@ -17,48 +17,36 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"testing"
 
 	"github.com/containerd/containerd/oci"
+	"github.com/containerd/containerd/third_party/k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
 	"github.com/containerd/go-cni"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/containerd/containerd/pkg/atomic"
 	criconfig "github.com/containerd/containerd/pkg/cri/config"
+	"github.com/containerd/containerd/pkg/cri/instrument"
 	servertesting "github.com/containerd/containerd/pkg/cri/server/testing"
 	containerstore "github.com/containerd/containerd/pkg/cri/store/container"
 	imagestore "github.com/containerd/containerd/pkg/cri/store/image"
 	"github.com/containerd/containerd/pkg/cri/store/label"
 	sandboxstore "github.com/containerd/containerd/pkg/cri/store/sandbox"
 	snapshotstore "github.com/containerd/containerd/pkg/cri/store/snapshot"
+	"github.com/containerd/containerd/pkg/deprecation"
 	ostesting "github.com/containerd/containerd/pkg/os/testing"
 	"github.com/containerd/containerd/pkg/registrar"
-)
-
-const (
-	testRootDir  = "/test/root"
-	testStateDir = "/test/state"
-	// Use an image id as test sandbox image to avoid image name resolve.
-	// TODO(random-liu): Change this to image name after we have complete image
-	// management unit test framework.
-	testSandboxImage = "sha256:c75bebcdd211f41b3a460c7bf82970ed6c75acaab9cd4c9a4e125b03ca113798"
-	testImageFSPath  = "/test/image/fs/path"
 )
 
 // newTestCRIService creates a fake criService for test.
 func newTestCRIService() *criService {
 	labels := label.NewStore()
 	return &criService{
-		config: criconfig.Config{
-			RootDir:  testRootDir,
-			StateDir: testStateDir,
-			PluginConfig: criconfig.PluginConfig{
-				SandboxImage:                     testSandboxImage,
-				TolerateMissingHugetlbController: true,
-			},
-		},
+		config:             testConfig,
 		imageFSPath:        testImageFSPath,
 		os:                 ostesting.NewFakeOS(),
 		sandboxStore:       sandboxstore.NewStore(labels),
@@ -70,6 +58,7 @@ func newTestCRIService() *criService {
 		netPlugin: map[string]cni.CNI{
 			defaultNetworkPlugin: servertesting.NewFakeCNIPlugin(),
 		},
+		initialized: atomic.NewBool(false),
 	}
 }
 
@@ -102,4 +91,20 @@ func TestLoadBaseOCISpec(t *testing.T) {
 
 	assert.Equal(t, "1.0.2", out.Version)
 	assert.Equal(t, "default", out.Hostname)
+}
+
+func TestAlphaCRIWarning(t *testing.T) {
+	ctx := context.Background()
+	ws := servertesting.NewFakeWarningService()
+	c := instrument.NewAlphaService(newTestCRIService(), ws)
+
+	c.Version(ctx, &v1alpha2.VersionRequest{})
+	c.Status(ctx, &v1alpha2.StatusRequest{})
+
+	// Emit warnings both times an v1alpha2 api is called.
+	expectedWarnings := []deprecation.Warning{
+		deprecation.CRIAPIV1Alpha2,
+		deprecation.CRIAPIV1Alpha2,
+	}
+	assert.Equal(t, expectedWarnings, ws.GetWarnings())
 }

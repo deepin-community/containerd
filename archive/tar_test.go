@@ -1,5 +1,4 @@
-//go:build !windows && !darwin
-// +build !windows,!darwin
+//go:build !windows
 
 /*
    Copyright The containerd Authors.
@@ -28,7 +27,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -36,7 +37,8 @@ import (
 	"github.com/containerd/containerd/pkg/testutil"
 	"github.com/containerd/continuity/fs"
 	"github.com/containerd/continuity/fs/fstest"
-	exec "golang.org/x/sys/execabs"
+	"github.com/opencontainers/go-digest"
+	"github.com/stretchr/testify/require"
 )
 
 const tarCmd = "tar"
@@ -358,13 +360,14 @@ func TestBreakouts(t *testing.T) {
 		}
 	}
 
-	breakouts := []struct {
+	type breakoutTest struct {
 		name      string
 		w         tartest.WriterToTar
 		apply     fstest.Applier
 		validator func(string) error
 		err       error
-	}{
+	}
+	breakouts := []breakoutTest{
 		{
 			name: "SymlinkAbsolute",
 			w: tartest.TarAll(
@@ -496,42 +499,7 @@ func TestBreakouts(t *testing.T) {
 			),
 			validator: sameFile("localpasswd", "/etc/passwd"),
 		},
-		{
-			name: "HardlinkSymlinkBeforeCreateTarget",
-			w: tartest.TarAll(
-				tc.Dir("etc", 0770),
-				tc.Symlink("/etc/passwd", "localpasswd"),
-				tc.Link("localpasswd", "localpasswd-dup"),
-				tc.File("/etc/passwd", []byte("after"), 0644),
-			),
-			validator: sameFile("localpasswd-dup", "/etc/passwd"),
-		},
-		{
-			name: "HardlinkSymlinkRelative",
-			w: tartest.TarAll(
-				tc.Dir("etc", 0770),
-				tc.File("/etc/passwd", []byte("inside"), 0644),
-				tc.Symlink("../../../../../etc/passwd", "passwdlink"),
-				tc.Link("/passwdlink", "localpasswd"),
-			),
-			validator: all(
-				sameSymlinkFile("/localpasswd", "/passwdlink"),
-				sameFile("/localpasswd", "/etc/passwd"),
-			),
-		},
-		{
-			name: "HardlinkSymlinkAbsolute",
-			w: tartest.TarAll(
-				tc.Dir("etc", 0770),
-				tc.File("/etc/passwd", []byte("inside"), 0644),
-				tc.Symlink("/etc/passwd", "passwdlink"),
-				tc.Link("/passwdlink", "localpasswd"),
-			),
-			validator: all(
-				sameSymlinkFile("/localpasswd", "/passwdlink"),
-				sameFile("/localpasswd", "/etc/passwd"),
-			),
-		},
+
 		{
 			name: "SymlinkParentDirectory",
 			w: tartest.TarAll(
@@ -744,36 +712,77 @@ func TestBreakouts(t *testing.T) {
 			// resolution ends up just removing etc
 			validator: fileNotExists("etc/passwd"),
 		},
-		{
+	}
 
-			name: "HardlinkSymlinkChmod",
-			w: func() tartest.WriterToTar {
-				p := filepath.Join(td, "perm400")
-				if err := os.WriteFile(p, []byte("..."), 0400); err != nil {
-					t.Fatal(err)
-				}
-				ep := filepath.Join(td, "also-exists-outside-root")
-				if err := os.WriteFile(ep, []byte("..."), 0640); err != nil {
-					t.Fatal(err)
-				}
-
-				return tartest.TarAll(
-					tc.Symlink(p, ep),
-					tc.Link(ep, "sketchylink"),
-				)
-			}(),
-			validator: func(string) error {
-				p := filepath.Join(td, "perm400")
-				fi, err := os.Lstat(p)
-				if err != nil {
-					return err
-				}
-				if perm := fi.Mode() & os.ModePerm; perm != 0400 {
-					return fmt.Errorf("%s perm changed from 0400 to %04o", p, perm)
-				}
-				return nil
+	// The follow tests perform operations not permitted on Darwin
+	if runtime.GOOS != "darwin" {
+		breakouts = append(breakouts, []breakoutTest{
+			{
+				name: "HardlinkSymlinkBeforeCreateTarget",
+				w: tartest.TarAll(
+					tc.Dir("etc", 0770),
+					tc.Symlink("/etc/passwd", "localpasswd"),
+					tc.Link("localpasswd", "localpasswd-dup"),
+					tc.File("/etc/passwd", []byte("after"), 0644),
+				),
+				validator: sameFile("localpasswd-dup", "/etc/passwd"),
 			},
-		},
+			{
+				name: "HardlinkSymlinkRelative",
+				w: tartest.TarAll(
+					tc.Dir("etc", 0770),
+					tc.File("/etc/passwd", []byte("inside"), 0644),
+					tc.Symlink("../../../../../etc/passwd", "passwdlink"),
+					tc.Link("/passwdlink", "localpasswd"),
+				),
+				validator: all(
+					sameSymlinkFile("/localpasswd", "/passwdlink"),
+					sameFile("/localpasswd", "/etc/passwd"),
+				),
+			},
+			{
+				name: "HardlinkSymlinkAbsolute",
+				w: tartest.TarAll(
+					tc.Dir("etc", 0770),
+					tc.File("/etc/passwd", []byte("inside"), 0644),
+					tc.Symlink("/etc/passwd", "passwdlink"),
+					tc.Link("/passwdlink", "localpasswd"),
+				),
+				validator: all(
+					sameSymlinkFile("/localpasswd", "/passwdlink"),
+					sameFile("/localpasswd", "/etc/passwd"),
+				),
+			},
+			{
+				name: "HardlinkSymlinkChmod",
+				w: func() tartest.WriterToTar {
+					p := filepath.Join(td, "perm400")
+					if err := os.WriteFile(p, []byte("..."), 0400); err != nil {
+						t.Fatal(err)
+					}
+					ep := filepath.Join(td, "also-exists-outside-root")
+					if err := os.WriteFile(ep, []byte("..."), 0640); err != nil {
+						t.Fatal(err)
+					}
+
+					return tartest.TarAll(
+						tc.Symlink(p, ep),
+						tc.Link(ep, "sketchylink"),
+					)
+				}(),
+				validator: func(string) error {
+					p := filepath.Join(td, "perm400")
+					fi, err := os.Lstat(p)
+					if err != nil {
+						return err
+					}
+					if perm := fi.Mode() & os.ModePerm; perm != 0400 {
+						return fmt.Errorf("%s perm changed from 0400 to %04o", p, perm)
+					}
+					return nil
+				},
+			},
+		}...)
 	}
 
 	for _, bo := range breakouts {
@@ -844,7 +853,7 @@ func testApply(t *testing.T, a fstest.Applier) error {
 		return fmt.Errorf("failed to apply filesystem changes: %w", err)
 	}
 
-	tarArgs := []string{"c", "-C", td}
+	tarArgs := []string{"cf", "-", "-C", td}
 	names, err := readDirNames(td)
 	if err != nil {
 		return fmt.Errorf("failed to read directory names: %w", err)
@@ -879,9 +888,12 @@ func testBaseDiff(t *testing.T, a fstest.Applier) error {
 
 	arch := Diff(context.Background(), "", td)
 
-	cmd := exec.Command(tarCmd, "x", "-C", dest)
+	cmd := exec.Command(tarCmd, "xf", "-", "-C", dest)
 	cmd.Stdin = arch
+	stderr := &bytes.Buffer{}
+	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
+		fmt.Println(stderr.String())
 		return fmt.Errorf("tar command failed: %w", err)
 	}
 
@@ -1153,7 +1165,53 @@ func TestDiffTar(t *testing.T) {
 	}
 }
 
+func TestSourceDateEpoch(t *testing.T) {
+	sourceDateEpoch, err := time.Parse(time.RFC3339, "2022-01-23T12:34:56Z")
+	require.NoError(t, err)
+	past, err := time.Parse(time.RFC3339, "2022-01-01T00:00:00Z")
+	require.NoError(t, err)
+	require.True(t, past.Before(sourceDateEpoch))
+	veryRecent := time.Now()
+	require.True(t, veryRecent.After(sourceDateEpoch))
+
+	opts := []WriteDiffOpt{WithSourceDateEpoch(&sourceDateEpoch)}
+	validators := []tarEntryValidator{
+		composeValidators(whiteoutEntry("f1"), requireModTime(sourceDateEpoch)),
+		composeValidators(fileEntry("f2", []byte("content2"), 0644), requireModTime(past)),
+		composeValidators(fileEntry("f3", []byte("content3"), 0644), requireModTime(sourceDateEpoch)),
+	}
+	a := fstest.Apply(
+		fstest.CreateFile("/f1", []byte("content"), 0644),
+	)
+	b := fstest.Apply(
+		// Remove f1; the timestamp of the tar entry will be sourceDateEpoch
+		fstest.RemoveAll("/f1"),
+		// Create f2 with the past timestamp; the timestamp of the tar entry will be past (< sourceDateEpoch)
+		fstest.CreateFile("/f2", []byte("content2"), 0644),
+		fstest.Chtimes("/f2", past, past),
+		// Create f3 with the veryRecent timestamp; the timestamp of the tar entry will be sourceDateEpoch
+		fstest.CreateFile("/f3", []byte("content3"), 0644),
+		fstest.Chtimes("/f3", veryRecent, veryRecent),
+	)
+	makeDiffTarTest(validators, a, b, opts...)(t)
+	if testing.Short() {
+		t.Skip("short: skipping repro test")
+	}
+	makeDiffTarReproTest(a, b, opts...)(t)
+}
+
 type tarEntryValidator func(*tar.Header, []byte) error
+
+func composeValidators(vv ...tarEntryValidator) tarEntryValidator {
+	return func(hdr *tar.Header, b []byte) error {
+		for _, v := range vv {
+			if err := v(hdr, b); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+}
 
 func dirEntry(name string, mode int) tarEntryValidator {
 	return func(hdr *tar.Header, b []byte) error {
@@ -1219,7 +1277,16 @@ func whiteoutEntry(name string) tarEntryValidator {
 	}
 }
 
-func makeDiffTarTest(validators []tarEntryValidator, a, b fstest.Applier) func(*testing.T) {
+func requireModTime(expected time.Time) tarEntryValidator {
+	return func(hdr *tar.Header, b []byte) error {
+		if !hdr.ModTime.Equal(expected) {
+			return fmt.Errorf("expected ModTime %v, got %v", expected, hdr.ModTime)
+		}
+		return nil
+	}
+}
+
+func makeDiffTarTest(validators []tarEntryValidator, a, b fstest.Applier, opts ...WriteDiffOpt) func(*testing.T) {
 	return func(t *testing.T) {
 		ad := t.TempDir()
 		if err := a.Apply(ad); err != nil {
@@ -1234,7 +1301,7 @@ func makeDiffTarTest(validators []tarEntryValidator, a, b fstest.Applier) func(*
 			t.Fatalf("failed to apply b: %v", err)
 		}
 
-		rc := Diff(context.Background(), ad, bd)
+		rc := Diff(context.Background(), ad, bd, opts...)
 		defer rc.Close()
 
 		tr := tar.NewReader(rc)
@@ -1259,6 +1326,54 @@ func makeDiffTarTest(validators []tarEntryValidator, a, b fstest.Applier) func(*
 			if err := validators[i](hdr, b); err != nil {
 				t.Fatalf("tar entry[%d] validation fail: %#v", i, err)
 			}
+		}
+	}
+}
+
+func makeDiffTar(t *testing.T, a, b fstest.Applier, opts ...WriteDiffOpt) (digest.Digest, []byte) {
+	ad := t.TempDir()
+	if err := a.Apply(ad); err != nil {
+		t.Fatalf("failed to apply a: %v", err)
+	}
+
+	bd := t.TempDir()
+	if err := fs.CopyDir(bd, ad); err != nil {
+		t.Fatalf("failed to copy dir: %v", err)
+	}
+	if err := b.Apply(bd); err != nil {
+		t.Fatalf("failed to apply b: %v", err)
+	}
+
+	rc := Diff(context.Background(), ad, bd, opts...)
+	defer rc.Close()
+	var buf bytes.Buffer
+	r := io.TeeReader(rc, &buf)
+	dgst, err := digest.FromReader(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = rc.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return dgst, buf.Bytes()
+}
+
+func makeDiffTarReproTest(a, b fstest.Applier, opts ...WriteDiffOpt) func(*testing.T) {
+	return func(t *testing.T) {
+		const (
+			count = 30
+			delay = 100 * time.Millisecond
+		)
+		var lastDigest digest.Digest
+		for i := 0; i < count; i++ {
+			dgst, _ := makeDiffTar(t, a, b, opts...)
+			t.Logf("#%02d: %v: digest %s", i, time.Now(), dgst)
+			if lastDigest == "" {
+				lastDigest = dgst
+			} else if dgst != lastDigest {
+				t.Fatalf("expected digest %s, got %s", lastDigest, dgst)
+			}
+			time.Sleep(delay)
 		}
 	}
 }

@@ -1,0 +1,122 @@
+From: Reinhard Tartler <siretart@tauware.de>
+Date: Sun, 1 Sep 2024 09:05:27 -0400
+Subject: Avoid dependency on component-base
+
+only used for integration tests
+---
+ go.mod                               |  1 -
+ go.sum                               |  3 ---
+ integration/client/go.sum            |  1 -
+ integration/remote/remote_runtime.go | 15 ---------------
+ 4 files changed, 20 deletions(-)
+
+diff --git a/go.mod b/go.mod
+index 5a4aa88..117dff9 100644
+--- a/go.mod
++++ b/go.mod
+@@ -82,7 +82,6 @@ require (
+ 	k8s.io/apimachinery v0.26.2
+ 	k8s.io/apiserver v0.26.2
+ 	k8s.io/client-go v0.26.2
+-	k8s.io/component-base v0.26.2
+ 	k8s.io/cri-api v0.27.1
+ 	k8s.io/klog/v2 v2.90.1
+ 	k8s.io/utils v0.0.0-20230220204549-a5ecb0141aa5
+diff --git a/go.sum b/go.sum
+index 3b13389..ce2c3b9 100644
+--- a/go.sum
++++ b/go.sum
+@@ -1246,9 +1246,6 @@ k8s.io/apiserver v0.26.2/go.mod h1:GHcozwXgXsPuOJ28EnQ/jXEM9QeG6HT22YxSNmpYNh8=
+ k8s.io/client-go v0.20.1/go.mod h1:/zcHdt1TeWSd5HoUe6elJmHSQ6uLLgp4bIJHVEuy+/Y=
+ k8s.io/client-go v0.26.2 h1:s1WkVujHX3kTp4Zn4yGNFK+dlDXy1bAAkIl+cFAiuYI=
+ k8s.io/client-go v0.26.2/go.mod h1:u5EjOuSyBa09yqqyY7m3abZeovO/7D/WehVVlZ2qcqU=
+-k8s.io/component-base v0.20.1/go.mod h1:guxkoJnNoh8LNrbtiQOlyp2Y2XFCZQmrcg2n/DeYNLk=
+-k8s.io/component-base v0.26.2 h1:IfWgCGUDzrD6wLLgXEstJKYZKAFS2kO+rBRi0p3LqcI=
+-k8s.io/component-base v0.26.2/go.mod h1:DxbuIe9M3IZPRxPIzhch2m1eT7uFrSBJUBuVCQEBivs=
+ k8s.io/cri-api v0.17.3/go.mod h1:X1sbHmuXhwaHs9xxYffLqJogVsnI+f6cPRcgPel7ywM=
+ k8s.io/cri-api v0.20.1/go.mod h1:2JRbKt+BFLTjtrILYVqQK5jqhI+XNdF6UiGMgczeBCI=
+ k8s.io/cri-api v0.27.1 h1:KWO+U8MfI9drXB/P4oU9VchaWYOlwDglJZVHWMpTT3Q=
+diff --git a/integration/client/go.sum b/integration/client/go.sum
+index 96e7686..b7396b8 100644
+--- a/integration/client/go.sum
++++ b/integration/client/go.sum
+@@ -3093,7 +3093,6 @@ k8s.io/apimachinery v0.26.2/go.mod h1:ats7nN1LExKHvJ9TmwootT00Yz05MuYqPXEXaVeOy5
+ k8s.io/apiserver v0.26.2/go.mod h1:GHcozwXgXsPuOJ28EnQ/jXEM9QeG6HT22YxSNmpYNh8=
+ k8s.io/client-go v0.26.2/go.mod h1:u5EjOuSyBa09yqqyY7m3abZeovO/7D/WehVVlZ2qcqU=
+ k8s.io/code-generator v0.19.7/go.mod h1:lwEq3YnLYb/7uVXLorOJfxg+cUu2oihFhHZ0n9NIla0=
+-k8s.io/component-base v0.26.2/go.mod h1:DxbuIe9M3IZPRxPIzhch2m1eT7uFrSBJUBuVCQEBivs=
+ k8s.io/cri-api v0.20.1/go.mod h1:2JRbKt+BFLTjtrILYVqQK5jqhI+XNdF6UiGMgczeBCI=
+ k8s.io/cri-api v0.25.3/go.mod h1:riC/P0yOGUf2K1735wW+CXs1aY2ctBgePtnnoFLd0dU=
+ k8s.io/cri-api v0.27.1/go.mod h1:+Ts/AVYbIo04S86XbTD73UPp/DkTiYxtsFeOFEu32L0=
+diff --git a/integration/remote/remote_runtime.go b/integration/remote/remote_runtime.go
+index 22d3d72..2f10e2a 100644
+--- a/integration/remote/remote_runtime.go
++++ b/integration/remote/remote_runtime.go
+@@ -44,7 +44,6 @@ import (
+ 	"k8s.io/klog/v2"
+ 
+ 	internalapi "github.com/containerd/containerd/integration/cri-api/pkg/apis"
+-	"k8s.io/component-base/logs/logreduction"
+ 	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1"
+ 	utilexec "k8s.io/utils/exec"
+ 
+@@ -55,8 +54,6 @@ import (
+ type RuntimeService struct {
+ 	timeout       time.Duration
+ 	runtimeClient runtimeapi.RuntimeServiceClient
+-	// Cache last per-container error message to reduce log spam
+-	logReduction *logreduction.LogReduction
+ }
+ 
+ const (
+@@ -87,7 +84,6 @@ func NewRuntimeService(endpoint string, connectionTimeout time.Duration) (intern
+ 	return &RuntimeService{
+ 		timeout:       connectionTimeout,
+ 		runtimeClient: runtimeapi.NewRuntimeServiceClient(conn),
+-		logReduction:  logreduction.NewLogReduction(identicalErrorDelay),
+ 	}, nil
+ }
+ 
+@@ -284,7 +280,6 @@ func (r *RuntimeService) StopContainer(containerID string, timeout int64, opts .
+ 	ctx, cancel := getContextWithTimeout(t)
+ 	defer cancel()
+ 
+-	r.logReduction.ClearID(containerID)
+ 	_, err := r.runtimeClient.StopContainer(ctx, &runtimeapi.StopContainerRequest{
+ 		ContainerId: containerID,
+ 		Timeout:     timeout,
+@@ -305,7 +300,6 @@ func (r *RuntimeService) RemoveContainer(containerID string, opts ...grpc.CallOp
+ 	ctx, cancel := getContextWithTimeout(r.timeout)
+ 	defer cancel()
+ 
+-	r.logReduction.ClearID(containerID)
+ 	_, err := r.runtimeClient.RemoveContainer(ctx, &runtimeapi.RemoveContainerRequest{
+ 		ContainerId: containerID,
+ 	}, opts...)
+@@ -346,13 +340,8 @@ func (r *RuntimeService) ContainerStatus(containerID string, opts ...grpc.CallOp
+ 		ContainerId: containerID,
+ 	}, opts...)
+ 	if err != nil {
+-		// Don't spam the log with endless messages about the same failure.
+-		if r.logReduction.ShouldMessageBePrinted(err.Error(), containerID) {
+-			klog.Errorf("ContainerStatus %q from runtime service failed: %v", containerID, err)
+-		}
+ 		return nil, err
+ 	}
+-	r.logReduction.ClearID(containerID)
+ 	klog.V(10).Infof("[RuntimeService] ContainerStatus Response (containerID=%v, status=%v)", containerID, resp.Status)
+ 
+ 	if resp.Status != nil {
+@@ -546,12 +535,8 @@ func (r *RuntimeService) ContainerStats(containerID string, opts ...grpc.CallOpt
+ 		ContainerId: containerID,
+ 	}, opts...)
+ 	if err != nil {
+-		if r.logReduction.ShouldMessageBePrinted(err.Error(), containerID) {
+-			klog.Errorf("ContainerStats %q from runtime service failed: %v", containerID, err)
+-		}
+ 		return nil, err
+ 	}
+-	r.logReduction.ClearID(containerID)
+ 	klog.V(10).Infof("[RuntimeService] ContainerStats Response (containerID=%v, stats=%v)", containerID, resp.GetStats())
+ 
+ 	return resp.GetStats(), nil

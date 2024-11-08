@@ -63,7 +63,9 @@ config as version 1 has been deprecated.
 - **address** (Default: "/run/containerd/debug.sock")
 - **uid** (Default: 0)
 - **gid** (Default: 0)
-- **level** (Default: "info") sets the debug log level
+- **level** (Default: "info") sets the debug log level. Supported levels are:
+  "trace", "debug", "info", "warn", "error", "fatal", "panic"
+- **format** (Default: "text") sets log format. Supported formats are "text" and "json"
 
 **[metrics]**
 : Section to enable and configure a metrics listener. Contains two properties:
@@ -87,12 +89,6 @@ documentation.
 
 - **[plugins."io.containerd.monitor.v1.cgroups"]** has one option __no_prometheus__ (Default: **false**)
 - **[plugins."io.containerd.service.v1.diff-service"]** has one option __default__, a list by default set to **["walking"]**
-- **[plugins."io.containerd.runtime.v1.linux"]** has several options for configuring the runtime, shim, and related options:
-  - **shim** specifies the shim binary (Default: **"containerd-shim"**),
-  - **runtime** is the OCI compliant runtime binary (Default: **"runc"**),
-  - **runtime_root** is the root directory used by the runtime (Default: **""**),
-  - **no_shim** specifies whether to use a shim or not (Default: **false**),
-  - **shim_debug** turns on debugging for the shim (Default: **false**)
 - **[plugins."io.containerd.gc.v1.scheduler"]** has several options that perform advanced tuning for the scheduler:
   - **pause_threshold** is the maximum amount of time GC should be scheduled (Default: **0.02**),
   - **deletion_threshold** guarantees GC is scheduled after n number of deletions (Default: **0** [not triggered]),
@@ -104,12 +100,16 @@ documentation.
   - **sched_core** Core scheduling is a feature that allows only trusted tasks
     to run concurrently on cpus sharing compute resources (eg: hyperthreads on
     a core). (Default: **false**)
-- **[plugins."io.containerd.service.v1.tasks-service"]** has one option:
-  - **rdt_config_file** (Linux only) specifies path to a configuration used for
-    configuring RDT (Default: **""**). Enables support for Intel RDT, a
-    technology for cache and memory bandwidth management.
-    See https://github.com/intel/goresctrl/blob/v0.2.0/doc/rdt.md#configuration
-    for details of the configuration file format.
+- **[plugins."io.containerd.service.v1.tasks-service"]** has performance options:
+  - **blockio_config_file** (Linux only) specifies path to blockio class definitions
+    (Default: **""**). Controls I/O scheduler priority and bandwidth throttling.
+    See [blockio configuration](https://github.com/intel/goresctrl/blob/main/doc/blockio.md#configuration)
+    for details of the file format.
+  - **rdt_config_file** (Linux only) specifies path to a configuration used for configuring
+    RDT (Default: **""**). Enables support for Intel RDT, a technology
+    for cache and memory bandwidth management.
+    See [RDT configuration](https://github.com/intel/goresctrl/blob/main/doc/rdt.md#configuration)
+    for details of the file format.
 
 **oom_score**
 : The out of memory (OOM) score applied to the containerd daemon process (Default: 0)
@@ -186,12 +186,6 @@ imports = ["/etc/containerd/runtime_*.toml", "./debug.toml"]
     no_prometheus = false
   [plugins."io.containerd.service.v1.diff-service"]
     default = ["walking"]
-  [plugins."io.containerd.runtime.v1.linux"]
-    shim = "containerd-shim"
-    runtime = "runc"
-    runtime_root = ""
-    no_shim = false
-    shim_debug = false
   [plugins."io.containerd.gc.v1.scheduler"]
     pause_threshold = 0.02
     deletion_threshold = 0
@@ -202,7 +196,8 @@ imports = ["/etc/containerd/runtime_*.toml", "./debug.toml"]
     platforms = ["linux/amd64"]
     sched_core = true
   [plugins."io.containerd.service.v1.tasks-service"]
-    rdt_config_file = "/etc/rdt-config.yaml"
+    blockio_config_file = ""
+    rdt_config_file = ""
 ```
 
 ## BUGS

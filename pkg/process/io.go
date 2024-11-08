@@ -1,5 +1,4 @@
 //go:build !windows
-// +build !windows
 
 /*
    Copyright The containerd Authors.
@@ -25,19 +24,19 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
 
-	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/containerd/containerd/pkg/stdio"
 	"github.com/containerd/fifo"
 	runc "github.com/containerd/go-runc"
+	"github.com/containerd/log"
 	"github.com/hashicorp/go-multierror"
-	exec "golang.org/x/sys/execabs"
 )
 
 const binaryIOProcTermTimeout = 12 * time.Second // Give logger process solid 10 seconds for cleanup

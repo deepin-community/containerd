@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"runtime"
@@ -36,19 +37,19 @@ import (
 	"github.com/containerd/containerd/containers"
 	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/images"
-	"github.com/containerd/containerd/log/logtest"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/containerd/containerd/oci"
-	"github.com/containerd/containerd/platforms"
 	"github.com/containerd/containerd/plugin"
+	gogotypes "github.com/containerd/containerd/protobuf/types"
 	_ "github.com/containerd/containerd/runtime"
 	"github.com/containerd/containerd/runtime/v2/runc/options"
 	"github.com/containerd/continuity/fs"
 	"github.com/containerd/go-runc"
-	"github.com/containerd/typeurl"
-	gogotypes "github.com/gogo/protobuf/types"
+	"github.com/containerd/log/logtest"
+	"github.com/containerd/platforms"
+	"github.com/containerd/typeurl/v2"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	exec "golang.org/x/sys/execabs"
+	"github.com/stretchr/testify/require"
 )
 
 func empty() cio.Creator {
@@ -1570,11 +1571,11 @@ func TestContainerExtensions(t *testing.T) {
 		if len(cExts) != 1 {
 			t.Errorf("expected 1 container extension")
 		}
-		if cExts["hello"].TypeUrl != ext.TypeUrl {
-			t.Errorf("got unexpected type url for extension: %s", cExts["hello"].TypeUrl)
+		if actual := cExts["hello"].GetTypeUrl(); actual != ext.TypeUrl {
+			t.Errorf("got unexpected type url for extension: %s", actual)
 		}
-		if !bytes.Equal(cExts["hello"].Value, ext.Value) {
-			t.Errorf("expected extension value %q, got: %q", ext.Value, cExts["hello"].Value)
+		if actual := cExts["hello"].GetValue(); !bytes.Equal(actual, ext.Value) {
+			t.Errorf("expected extension value %q, got: %q", ext.Value, actual)
 		}
 	}
 
@@ -2166,7 +2167,12 @@ func TestDaemonRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer task.Delete(ctx)
+
+	defer func() {
+		if _, err := task.Delete(ctx, WithProcessKill); err != nil {
+			t.Logf("failed to delete task: %v", err)
+		}
+	}()
 
 	statusC, err := task.Wait(ctx)
 	if err != nil {
@@ -2188,7 +2194,10 @@ func TestDaemonRestart(t *testing.T) {
 		t.Errorf(`first task.Wait() should have failed with "transport is closing"`)
 	}
 
-	waitCtx, waitCancel := context.WithTimeout(ctx, 2*time.Second)
+	// NOTE(gabriel-samfira): Windows needs a bit more time to restart.
+	// Increase timeout from 2 seconds to 10 seconds to avoid deadline
+	// exceeded errors.
+	waitCtx, waitCancel := context.WithTimeout(ctx, 10*time.Second)
 	serving, err := client.IsServing(waitCtx)
 	waitCancel()
 	if !serving {
@@ -2327,6 +2336,11 @@ func TestContainerKillInitKillsChildWhenNotHostPid(t *testing.T) {
 }
 
 func TestTaskResize(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// PowerShell can, but nanoserver images don't have that.
+		t.Skipf("%q doesn't have a way to query its terminal size", testImage)
+	}
+
 	t.Parallel()
 
 	client, err := newClient(t, address)
@@ -2346,27 +2360,50 @@ func TestTaskResize(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	container, err := client.NewContainer(ctx, id, WithNewSnapshot(id, image), WithNewSpec(oci.WithImageConfig(image), withExitStatus(7)))
+
+	container, err := client.NewContainer(ctx, id,
+		WithNewSnapshot(id, image),
+		WithNewSpec(oci.WithImageConfig(image), withProcessArgs("/bin/stty", "size"), oci.WithTTY),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer container.Delete(ctx, WithSnapshotCleanup)
 
-	task, err := container.NewTask(ctx, empty())
+	stdout := &bytes.Buffer{}
+
+	task, err := container.NewTask(ctx,
+		cio.NewCreator(cio.WithStreams(nil, stdout, nil), cio.WithTerminal),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer task.Delete(ctx)
 
+	if err := task.Resize(ctx, 12, 34); err != nil {
+		t.Fatal(err)
+	}
+
+	err = task.Start(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	statusC, err := task.Wait(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := task.Resize(ctx, 32, 32); err != nil {
+
+	<-statusC
+
+	task.Kill(ctx, syscall.SIGKILL)
+
+	_, err = task.Delete(ctx)
+	if err != nil {
 		t.Fatal(err)
 	}
-	task.Kill(ctx, syscall.SIGKILL)
-	<-statusC
+
+	require.Equal(t, "34 12\r\n", stdout.String())
 }
 
 func TestContainerImage(t *testing.T) {

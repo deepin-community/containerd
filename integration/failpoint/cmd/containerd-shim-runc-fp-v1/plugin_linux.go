@@ -18,25 +18,22 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	taskapi "github.com/containerd/containerd/api/runtime/task/v2"
 	"github.com/containerd/containerd/oci"
 	"github.com/containerd/containerd/pkg/failpoint"
 	"github.com/containerd/containerd/pkg/shutdown"
 	"github.com/containerd/containerd/plugin"
 	"github.com/containerd/containerd/runtime/v2/runc/task"
 	"github.com/containerd/containerd/runtime/v2/shim"
-	taskapi "github.com/containerd/containerd/runtime/v2/task"
 	"github.com/containerd/ttrpc"
 )
 
 const (
-	ociConfigFilename = "config.json"
-
 	failpointPrefixKey = "io.containerd.runtime.v2.shim.failpoint."
 )
 
@@ -113,15 +110,10 @@ func newFailpointFromOCIAnnotation() (map[string]*failpoint.Failpoint, error) {
 		return nil, fmt.Errorf("failed to get current working dir: %w", err)
 	}
 
-	configPath := filepath.Join(cwd, ociConfigFilename)
-	data, err := os.ReadFile(configPath)
+	configPath := filepath.Join(cwd, oci.ConfigFilename)
+	spec, err := oci.ReadSpec(configPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read %v: %w", configPath, err)
-	}
-
-	var spec oci.Spec
-	if err := json.Unmarshal(data, &spec); err != nil {
-		return nil, fmt.Errorf("failed to parse oci.Spec(%v): %w", string(data), err)
+		return nil, err
 	}
 
 	res := make(map[string]*failpoint.Failpoint)

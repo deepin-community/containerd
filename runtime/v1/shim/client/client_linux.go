@@ -18,10 +18,10 @@ package client
 
 import (
 	"fmt"
+	"os/exec"
 	"syscall"
 
-	"github.com/containerd/cgroups"
-	exec "golang.org/x/sys/execabs"
+	"github.com/containerd/cgroups/v3/cgroup1"
 )
 
 func getSysProcAttr() *syscall.SysProcAttr {
@@ -31,13 +31,11 @@ func getSysProcAttr() *syscall.SysProcAttr {
 }
 
 func setCgroup(cgroupPath string, cmd *exec.Cmd) error {
-	cg, err := cgroups.Load(cgroups.V1, cgroups.StaticPath(cgroupPath))
+	cg, err := cgroup1.Load(cgroup1.StaticPath(cgroupPath))
 	if err != nil {
 		return fmt.Errorf("failed to load cgroup %s: %w", cgroupPath, err)
 	}
-	if err := cg.Add(cgroups.Process{
-		Pid: cmd.Process.Pid,
-	}); err != nil {
+	if err := cg.AddProc(uint64(cmd.Process.Pid)); err != nil {
 		return fmt.Errorf("failed to join cgroup %s: %w", cgroupPath, err)
 	}
 	return nil

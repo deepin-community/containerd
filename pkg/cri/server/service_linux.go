@@ -20,10 +20,11 @@ import (
 	"fmt"
 
 	"github.com/containerd/containerd/pkg/cap"
-	"github.com/containerd/containerd/pkg/userns"
 	cni "github.com/containerd/go-cni"
+	"github.com/moby/sys/userns"
 	"github.com/opencontainers/selinux/go-selinux"
 	"github.com/sirupsen/logrus"
+	"tags.cncf.io/container-device-interface/pkg/cdi"
 )
 
 // networkAttachCount is the minimum number of networks the PodSandbox
@@ -33,8 +34,8 @@ const networkAttachCount = 2
 // initPlatform handles linux specific initialization for the CRI service.
 func (c *criService) initPlatform() (err error) {
 	if userns.RunningInUserNS() {
-		if !(c.config.DisableCgroup && !c.apparmorEnabled() && c.config.RestrictOOMScoreAdj) {
-			logrus.Warn("Running containerd in a user namespace typically requires disable_cgroup, disable_apparmor, restrict_oom_score_adj set to be true")
+		if c.apparmorEnabled() || !c.config.RestrictOOMScoreAdj {
+			logrus.Warn("Running CRI plugin in a user namespace typically requires disable_apparmor and restrict_oom_score_adj to be true")
 		}
 	}
 
@@ -84,6 +85,13 @@ func (c *criService) initPlatform() (err error) {
 		c.allCaps, err = cap.Current()
 		if err != nil {
 			return fmt.Errorf("failed to get caps: %w", err)
+		}
+	}
+
+	if c.config.EnableCDI {
+		err = cdi.Configure(cdi.WithSpecDirs(c.config.CDISpecDirs...))
+		if err != nil {
+			return fmt.Errorf("failed to configure CDI registry: %w", err)
 		}
 	}
 

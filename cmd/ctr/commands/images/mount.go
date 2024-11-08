@@ -20,19 +20,20 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/containerd/platforms"
+	"github.com/opencontainers/image-spec/identity"
+	"github.com/urfave/cli"
+
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cmd/ctr/commands"
 	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/leases"
 	"github.com/containerd/containerd/mount"
-	"github.com/containerd/containerd/platforms"
-	"github.com/opencontainers/image-spec/identity"
-	"github.com/urfave/cli"
 )
 
 var mountCommand = cli.Command{
 	Name:      "mount",
-	Usage:     "mount an image to a target path",
+	Usage:     "Mount an image to a target path",
 	ArgsUsage: "[flags] <ref> <target>",
 	Description: `Mount an image rootfs to a specified path.
 
@@ -46,7 +47,7 @@ When you are done, use the unmount command.
 		cli.StringFlag{
 			Name:  "platform",
 			Usage: "Mount the image for the specified platform",
-			Value: platforms.DefaultString(),
+			Value: platforms.Format(platforms.DefaultSpec()), // For 1.7 continue using the old format without os-version included.
 		},
 	),
 	Action: func(context *cli.Context) (retErr error) {
@@ -67,7 +68,7 @@ When you are done, use the unmount command.
 		}
 		defer cancel()
 
-		snapshotter := context.GlobalString("snapshotter")
+		snapshotter := context.String("snapshotter")
 		if snapshotter == "" {
 			snapshotter = containerd.DefaultSnapshotter
 		}

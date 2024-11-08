@@ -19,22 +19,23 @@ package images
 import (
 	"fmt"
 
+	"github.com/urfave/cli"
+
 	"github.com/containerd/containerd/cmd/ctr/commands"
 	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/leases"
 	"github.com/containerd/containerd/mount"
-	"github.com/urfave/cli"
 )
 
 var unmountCommand = cli.Command{
 	Name:        "unmount",
-	Usage:       "unmount the image from the target",
+	Usage:       "Unmount the image from the target",
 	ArgsUsage:   "[flags] <target>",
 	Description: "Unmount the image rootfs from the specified target.",
 	Flags: append(append(commands.RegistryFlags, append(commands.SnapshotterFlags, commands.LabelFlag)...),
 		cli.BoolFlag{
 			Name:  "rm",
-			Usage: "remove the snapshot after a successful unmount",
+			Usage: "Remove the snapshot after a successful unmount",
 		},
 	),
 	Action: func(context *cli.Context) error {

@@ -20,6 +20,7 @@ import (
 	"context"
 
 	"github.com/containerd/containerd/runtime/v2/runc/manager"
+	_ "github.com/containerd/containerd/runtime/v2/runc/pause"
 	"github.com/containerd/containerd/runtime/v2/shim"
 )
 

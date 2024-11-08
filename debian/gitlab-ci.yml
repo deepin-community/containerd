@@ -1,6 +1,9 @@
-# auto-generated, DO NOT MODIFY.
-# The authoritative copy of this file lives at:
-# https://salsa.debian.org/go-team/infra/pkg-go-tools/blob/master/config/gitlabciyml.go
+# cf. https://salsa.debian.org/salsa-ci-team/pipeline/
 ---
 include:
-  - https://salsa.debian.org/go-team/infra/pkg-go-tools/-/raw/master/pipeline/test-archive.yml
+  - https://salsa.debian.org/salsa-ci-team/pipeline/raw/master/salsa-ci.yml
+  - https://salsa.debian.org/salsa-ci-team/pipeline/raw/master/pipeline-jobs.yml
+
+variables:
+  SALSA_CI_DISABLE_APTLY: 0
+  SALSA_CI_DISABLE_CROSSBUILD_ARM64: 1

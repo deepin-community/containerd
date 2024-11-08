@@ -1,5 +1,4 @@
 //go:build windows
-// +build windows
 
 /*
    Copyright The containerd Authors.
@@ -27,6 +26,7 @@ import (
 	"time"
 
 	"github.com/Microsoft/hcsshim/osversion"
+	"github.com/containerd/containerd/integration/images"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/windows/registry"
@@ -46,6 +46,7 @@ var (
 
 // Tests to verify the Windows HostProcess
 func TestWindowsHostProcess(t *testing.T) {
+	pauseImage := images.Get(images.Pause)
 	EnsureImageExists(t, pauseImage)
 
 	t.Run("run as Local Service", func(t *testing.T) {
@@ -156,7 +157,7 @@ func TestArgsEscapedImagesOnWindows(t *testing.T) {
 	}
 
 	containerName := "test-container"
-	testImage := GetImage(ArgsEscaped)
+	testImage := images.Get(images.ArgsEscaped)
 	sbConfig := &runtime.PodSandboxConfig{
 		Metadata: &runtime.PodSandboxMetadata{
 			Name:      "sandbox",

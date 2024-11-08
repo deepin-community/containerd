@@ -21,7 +21,7 @@ import (
 
 	sd "github.com/coreos/go-systemd/v22/daemon"
 
-	"github.com/containerd/containerd/log"
+	"github.com/containerd/log"
 )
 
 // notifyReady notifies systemd that the daemon is ready to serve requests
@@ -36,10 +36,13 @@ func notifyStopping(ctx context.Context) error {
 
 func sdNotify(ctx context.Context, state string) error {
 	notified, err := sd.SdNotify(false, state)
-	log.G(ctx).
-		WithError(err).
-		WithField("notified", notified).
+	entry := log.G(ctx)
+	if err != nil {
+		entry = entry.WithError(err)
+	}
+	entry.WithField("notified", notified).
 		WithField("state", state).
 		Debug("sd notification")
+
 	return err
 }

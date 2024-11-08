@@ -1,5 +1,4 @@
 //go:build !linux && !windows
-// +build !linux,!windows
 
 /*
    Copyright The containerd Authors.
@@ -20,9 +19,8 @@
 package client
 
 import (
+	"os/exec"
 	"syscall"
-
-	exec "golang.org/x/sys/execabs"
 )
 
 func getSysProcAttr() *syscall.SysProcAttr {

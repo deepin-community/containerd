@@ -20,28 +20,26 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	goruntime "runtime"
 	"syscall"
 	"time"
 
-	"github.com/containerd/cgroups"
-	cgroupsv2 "github.com/containerd/cgroups/v2"
-	"github.com/containerd/containerd/log"
+	"github.com/containerd/cgroups/v3"
+	"github.com/containerd/cgroups/v3/cgroup1"
+	cgroupsv2 "github.com/containerd/cgroups/v3/cgroup2"
 	"github.com/containerd/containerd/mount"
 	"github.com/containerd/containerd/namespaces"
+	"github.com/containerd/containerd/oci"
 	"github.com/containerd/containerd/pkg/process"
 	"github.com/containerd/containerd/pkg/schedcore"
 	"github.com/containerd/containerd/runtime/v2/runc"
 	"github.com/containerd/containerd/runtime/v2/runc/options"
 	"github.com/containerd/containerd/runtime/v2/shim"
 	runcC "github.com/containerd/go-runc"
-	"github.com/containerd/typeurl"
-	"github.com/gogo/protobuf/proto"
-	ptypes "github.com/gogo/protobuf/types"
-	exec "golang.org/x/sys/execabs"
+	"github.com/containerd/log"
 	"golang.org/x/sys/unix"
 )
 
@@ -61,7 +59,11 @@ var groupLabels = []string{
 	"io.kubernetes.cri.sandbox-id",
 }
 
+// spec is a shallow version of [oci.Spec] containing only the
+// fields we need for the hook. We use a shallow struct to reduce
+// the overhead of unmarshaling.
 type spec struct {
+	// Annotations contains arbitrary metadata for the container.
 	Annotations map[string]string `json:"annotations,omitempty"`
 }
 
@@ -69,7 +71,7 @@ type manager struct {
 	name string
 }
 
-func newCommand(ctx context.Context, id, containerdBinary, containerdAddress, containerdTTRPCAddress string, debug bool) (*exec.Cmd, error) {
+func newCommand(ctx context.Context, id, containerdAddress, containerdTTRPCAddress string, debug bool) (*exec.Cmd, error) {
 	ns, err := namespaces.NamespaceRequired(ctx)
 	if err != nil {
 		return nil, err
@@ -100,7 +102,7 @@ func newCommand(ctx context.Context, id, containerdBinary, containerdAddress, co
 }
 
 func readSpec() (*spec, error) {
-	f, err := os.Open("config.json")
+	f, err := os.Open(oci.ConfigFilename)
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +119,7 @@ func (m manager) Name() string {
 }
 
 func (manager) Start(ctx context.Context, id string, opts shim.StartOpts) (_ string, retErr error) {
-	cmd, err := newCommand(ctx, id, opts.ContainerdBinary, opts.Address, opts.TTRPCAddress, opts.Debug)
+	cmd, err := newCommand(ctx, id, opts.Address, opts.TTRPCAddress, opts.Debug)
 	if err != nil {
 		return "", err
 	}
@@ -199,41 +201,29 @@ func (manager) Start(ctx context.Context, id string, opts shim.StartOpts) (_ str
 	}()
 	// make sure to wait after start
 	go cmd.Wait()
-	if data, err := io.ReadAll(os.Stdin); err == nil {
-		if len(data) > 0 {
-			var any ptypes.Any
-			if err := proto.Unmarshal(data, &any); err != nil {
-				return "", err
-			}
-			v, err := typeurl.UnmarshalAny(&any)
-			if err != nil {
-				return "", err
-			}
-			if opts, ok := v.(*options.Options); ok {
-				if opts.ShimCgroup != "" {
-					if cgroups.Mode() == cgroups.Unified {
-						cg, err := cgroupsv2.LoadManager("/sys/fs/cgroup", opts.ShimCgroup)
-						if err != nil {
-							return "", fmt.Errorf("failed to load cgroup %s: %w", opts.ShimCgroup, err)
-						}
-						if err := cg.AddProc(uint64(cmd.Process.Pid)); err != nil {
-							return "", fmt.Errorf("failed to join cgroup %s: %w", opts.ShimCgroup, err)
-						}
-					} else {
-						cg, err := cgroups.Load(cgroups.V1, cgroups.StaticPath(opts.ShimCgroup))
-						if err != nil {
-							return "", fmt.Errorf("failed to load cgroup %s: %w", opts.ShimCgroup, err)
-						}
-						if err := cg.Add(cgroups.Process{
-							Pid: cmd.Process.Pid,
-						}); err != nil {
-							return "", fmt.Errorf("failed to join cgroup %s: %w", opts.ShimCgroup, err)
-						}
-					}
+
+	if opts, err := shim.ReadRuntimeOptions[*options.Options](os.Stdin); err == nil {
+		if opts.ShimCgroup != "" {
+			if cgroups.Mode() == cgroups.Unified {
+				cg, err := cgroupsv2.Load(opts.ShimCgroup)
+				if err != nil {
+					return "", fmt.Errorf("failed to load cgroup %s: %w", opts.ShimCgroup, err)
+				}
+				if err := cg.AddProc(uint64(cmd.Process.Pid)); err != nil {
+					return "", fmt.Errorf("failed to join cgroup %s: %w", opts.ShimCgroup, err)
+				}
+			} else {
+				cg, err := cgroup1.Load(cgroup1.StaticPath(opts.ShimCgroup))
+				if err != nil {
+					return "", fmt.Errorf("failed to load cgroup %s: %w", opts.ShimCgroup, err)
+				}
+				if err := cg.AddProc(uint64(cmd.Process.Pid)); err != nil {
+					return "", fmt.Errorf("failed to join cgroup %s: %w", opts.ShimCgroup, err)
 				}
 			}
 		}
 	}
+
 	if err := shim.AdjustOOMScore(cmd.Process.Pid); err != nil {
 		return "", fmt.Errorf("failed to adjust OOM score for shim: %w", err)
 	}
@@ -264,13 +254,13 @@ func (manager) Stop(ctx context.Context, id string) (shim.StopStatus, error) {
 		root = opts.Root
 	}
 
-	r := process.NewRunc(root, path, ns, runtime, "", false)
+	r := process.NewRunc(root, path, ns, runtime, false)
 	if err := r.Delete(ctx, id, &runcC.DeleteOpts{
 		Force: true,
 	}); err != nil {
 		log.G(ctx).WithError(err).Warn("failed to remove runc container")
 	}
-	if err := mount.UnmountAll(filepath.Join(path, "rootfs"), 0); err != nil {
+	if err := mount.UnmountRecursive(filepath.Join(path, "rootfs"), 0); err != nil {
 		log.G(ctx).WithError(err).Warn("failed to cleanup rootfs mount")
 	}
 	pid, err := runcC.ReadPidFile(filepath.Join(path, process.InitPidFile))

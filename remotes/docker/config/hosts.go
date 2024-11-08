@@ -32,10 +32,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/containerd/containerd/errdefs"
-	"github.com/containerd/containerd/log"
-	"github.com/containerd/containerd/remotes/docker"
+	"github.com/containerd/log"
 	"github.com/pelletier/go-toml"
+
+	"github.com/containerd/containerd/errdefs"
+	"github.com/containerd/containerd/remotes/docker"
 )
 
 // UpdateClientFunc is a function that lets you to amend http Client behavior used by registry clients.
@@ -101,12 +102,22 @@ func ConfigureHosts(ctx context.Context, options HostOptions) docker.RegistryHos
 				hosts[len(hosts)-1].host = "registry-1.docker.io"
 			} else if docker.IsLocalhost(host) {
 				hosts[len(hosts)-1].host = host
-				if options.DefaultScheme == "" || options.DefaultScheme == "http" {
-					hosts[len(hosts)-1].scheme = "http"
+				if options.DefaultScheme == "" {
+					_, port, _ := net.SplitHostPort(host)
+					if port == "" || port == "443" {
+						// If port is default or 443, only use https
+						hosts[len(hosts)-1].scheme = "https"
+					} else {
+						// HTTP fallback logic will be used when protocol is ambiguous
+						hosts[len(hosts)-1].scheme = "http"
+					}
 
-					// Skipping TLS verification for localhost
-					var skipVerify = true
-					hosts[len(hosts)-1].skipVerify = &skipVerify
+					// When port is 80, protocol is not ambiguous
+					if port != "80" {
+						// Skipping TLS verification for localhost
+						var skipVerify = true
+						hosts[len(hosts)-1].skipVerify = &skipVerify
+					}
 				} else {
 					hosts[len(hosts)-1].scheme = options.DefaultScheme
 				}
@@ -122,8 +133,13 @@ func ConfigureHosts(ctx context.Context, options HostOptions) docker.RegistryHos
 			hosts[len(hosts)-1].capabilities = docker.HostCapabilityPull | docker.HostCapabilityResolve | docker.HostCapabilityPush
 		}
 
+		// tlsConfigured indicates that TLS was configured and HTTP endpoints should
+		// attempt to use the TLS configuration before falling back to HTTP
+		var tlsConfigured bool
+
 		var defaultTLSConfig *tls.Config
 		if options.DefaultTLS != nil {
+			tlsConfigured = true
 			defaultTLSConfig = options.DefaultTLS
 		} else {
 			defaultTLSConfig = &tls.Config{}
@@ -161,14 +177,11 @@ func ConfigureHosts(ctx context.Context, options HostOptions) docker.RegistryHos
 
 		rhosts := make([]docker.RegistryHost, len(hosts))
 		for i, host := range hosts {
-
-			rhosts[i].Scheme = host.scheme
-			rhosts[i].Host = host.host
-			rhosts[i].Path = host.path
-			rhosts[i].Capabilities = host.capabilities
-			rhosts[i].Header = host.header
+			// Allow setting for each host as well
+			explicitTLS := tlsConfigured
 
 			if host.caCerts != nil || host.clientPairs != nil || host.skipVerify != nil {
+				explicitTLS = true
 				tr := defaultTransport.Clone()
 				tlsConfig := tr.TLSClientConfig
 				if host.skipVerify != nil {
@@ -232,6 +245,27 @@ func ConfigureHosts(ctx context.Context, options HostOptions) docker.RegistryHos
 				rhosts[i].Client = client
 				rhosts[i].Authorizer = authorizer
 			}
+
+			// When TLS has been configured for the operation or host and
+			// the protocol from the port number is ambiguous, use the
+			// docker.NewHTTPFallback roundtripper to catch TLS errors and re-attempt the
+			// request as http. This allows preference for https when configured but
+			// also catches TLS errors early enough in the request to avoid sending
+			// the request twice or consuming the request body.
+			if host.scheme == "http" && explicitTLS {
+				_, port, _ := net.SplitHostPort(host.host)
+				if port != "" && port != "80" {
+					log.G(ctx).WithField("host", host.host).Info("host will try HTTPS first since it is configured for HTTP with a TLS configuration, consider changing host to HTTPS or removing unused TLS configuration")
+					host.scheme = "https"
+					rhosts[i].Client.Transport = docker.NewHTTPFallback(rhosts[i].Client.Transport)
+				}
+			}
+
+			rhosts[i].Scheme = host.scheme
+			rhosts[i].Host = host.host
+			rhosts[i].Path = host.path
+			rhosts[i].Capabilities = host.capabilities
+			rhosts[i].Header = host.header
 		}
 
 		return rhosts, nil
@@ -332,7 +366,6 @@ func parseHostsFile(baseDir string, b []byte) ([]hostConfig, error) {
 
 	// HACK: we want to keep toml parsing structures private in this package, however go-toml ignores private embedded types.
 	// so we remap it to a public type within the func body, so technically it's public, but not possible to import elsewhere.
-	//nolint:unused
 	type HostFileConfig = hostFileConfig
 
 	c := struct {

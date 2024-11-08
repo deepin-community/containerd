@@ -23,15 +23,18 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/containerd/platforms"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+
 	. "github.com/containerd/containerd"
 	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/images"
-	"github.com/containerd/containerd/platforms"
-	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	imagelist "github.com/containerd/containerd/integration/images"
+	"github.com/containerd/containerd/labels"
 )
 
 func TestImageIsUnpacked(t *testing.T) {
-	const imageName = "k8s.gcr.io/pause:3.6"
+	imageName := imagelist.Get(imagelist.Pause)
 	ctx, cancel := testContext(t)
 	defer cancel()
 
@@ -104,7 +107,7 @@ func TestImagePullWithDistSourceLabel(t *testing.T) {
 	defer client.ImageService().Delete(ctx, imageName)
 
 	cs := client.ContentStore()
-	key := fmt.Sprintf("containerd.io/distribution.source.%s", source)
+	key := labels.LabelDistributionSource + "." + source
 
 	// only check the target platform
 	childrenHandler := images.LimitManifests(images.ChildrenHandler(cs), pMatcher, 1)
@@ -137,7 +140,7 @@ func TestImageUsage(t *testing.T) {
 		t.Skip()
 	}
 
-	imageName := "k8s.gcr.io/pause:3.6"
+	imageName := imagelist.Get(imagelist.Pause)
 	ctx, cancel := testContext(t)
 	defer cancel()
 

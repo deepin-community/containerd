@@ -1,5 +1,4 @@
 //go:build linux
-// +build linux
 
 /*
    Copyright The containerd Authors.
@@ -19,7 +18,7 @@
 
 package blkdiscard
 
-import exec "golang.org/x/sys/execabs"
+import "os/exec"
 
 // Version returns the output of "blkdiscard --version"
 func Version() (string, error) {

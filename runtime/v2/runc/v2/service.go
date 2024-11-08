@@ -1,5 +1,4 @@
 //go:build linux
-// +build linux
 
 /*
    Copyright The containerd Authors.
@@ -22,11 +21,12 @@ package v2
 import (
 	"context"
 
+	shimapi "github.com/containerd/containerd/api/runtime/task/v2"
 	"github.com/containerd/containerd/pkg/shutdown"
+	"github.com/containerd/containerd/protobuf"
 	"github.com/containerd/containerd/runtime/v2/runc/manager"
 	"github.com/containerd/containerd/runtime/v2/runc/task"
 	"github.com/containerd/containerd/runtime/v2/shim"
-	shimapi "github.com/containerd/containerd/runtime/v2/task"
 )
 
 // TODO(2.0): Remove this package
@@ -45,7 +45,7 @@ func (stm *shimTaskManager) Cleanup(ctx context.Context) (*shimapi.DeleteRespons
 	return &shimapi.DeleteResponse{
 		Pid:        uint32(ss.Pid),
 		ExitStatus: uint32(ss.ExitStatus),
-		ExitedAt:   ss.ExitedAt,
+		ExitedAt:   protobuf.ToTimestamp(ss.ExitedAt),
 	}, nil
 }
 

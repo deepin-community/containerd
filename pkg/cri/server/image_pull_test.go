@@ -19,13 +19,15 @@ package server
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"testing"
+
+	"github.com/containerd/containerd/pkg/cri/annotations"
+	criconfig "github.com/containerd/containerd/pkg/cri/config"
+	"github.com/containerd/containerd/pkg/cri/labels"
 
 	"github.com/stretchr/testify/assert"
 	runtime "k8s.io/cri-api/pkg/apis/runtime/v1"
-
-	criconfig "github.com/containerd/containerd/pkg/cri/config"
-	"github.com/containerd/containerd/pkg/cri/labels"
 )
 
 func TestParseAuth(t *testing.T) {
@@ -99,11 +101,12 @@ func TestParseAuth(t *testing.T) {
 			expectedSecret: testPasswd,
 		},
 	} {
-		t.Logf("TestCase %q", desc)
-		u, s, err := ParseAuth(test.auth, test.host)
-		assert.Equal(t, test.expectErr, err != nil)
-		assert.Equal(t, test.expectedUser, u)
-		assert.Equal(t, test.expectedSecret, s)
+		t.Run(desc, func(t *testing.T) {
+			u, s, err := ParseAuth(test.auth, test.host)
+			assert.Equal(t, test.expectErr, err != nil)
+			assert.Equal(t, test.expectedUser, u)
+			assert.Equal(t, test.expectedSecret, s)
+		})
 	}
 }
 
@@ -247,12 +250,13 @@ func TestRegistryEndpoints(t *testing.T) {
 			},
 		},
 	} {
-		t.Logf("TestCase %q", desc)
-		c := newTestCRIService()
-		c.config.Registry.Mirrors = test.mirrors
-		got, err := c.registryEndpoints(test.host)
-		assert.NoError(t, err)
-		assert.Equal(t, test.expected, got)
+		t.Run(desc, func(t *testing.T) {
+			c := newTestCRIService()
+			c.config.Registry.Mirrors = test.mirrors
+			got, err := c.registryEndpoints(test.host)
+			assert.NoError(t, err)
+			assert.Equal(t, test.expected, got)
+		})
 	}
 }
 
@@ -302,9 +306,10 @@ func TestDefaultScheme(t *testing.T) {
 			expected: "https",
 		},
 	} {
-		t.Logf("TestCase %q", desc)
-		got := defaultScheme(test.host)
-		assert.Equal(t, test.expected, got)
+		t.Run(desc, func(t *testing.T) {
+			got := defaultScheme(test.host)
+			assert.Equal(t, test.expected, got)
+		})
 	}
 }
 
@@ -322,11 +327,73 @@ func TestEncryptedImagePullOpts(t *testing.T) {
 			expectedOpts: 0,
 		},
 	} {
-		t.Logf("TestCase %q", desc)
-		c := newTestCRIService()
-		c.config.ImageDecryption.KeyModel = test.keyModel
-		got := len(c.encryptedImagesPullOpts())
-		assert.Equal(t, test.expectedOpts, got)
+		t.Run(desc, func(t *testing.T) {
+			c := newTestCRIService()
+			c.config.ImageDecryption.KeyModel = test.keyModel
+			got := len(c.encryptedImagesPullOpts())
+			assert.Equal(t, test.expectedOpts, got)
+		})
+	}
+}
+
+func TestSnapshotterFromPodSandboxConfig(t *testing.T) {
+	defaultSnashotter := "native"
+	runtimeSnapshotter := "devmapper"
+	tests := []struct {
+		desc              string
+		podSandboxConfig  *runtime.PodSandboxConfig
+		expectSnapshotter string
+		expectErr         error
+	}{
+		{
+			desc:              "should return default snapshotter for nil podSandboxConfig",
+			expectSnapshotter: defaultSnashotter,
+		},
+		{
+			desc:              "should return default snapshotter for nil podSandboxConfig.Annotations",
+			podSandboxConfig:  &runtime.PodSandboxConfig{},
+			expectSnapshotter: defaultSnashotter,
+		},
+		{
+			desc: "should return default snapshotter for empty podSandboxConfig.Annotations",
+			podSandboxConfig: &runtime.PodSandboxConfig{
+				Annotations: make(map[string]string),
+			},
+			expectSnapshotter: defaultSnashotter,
+		},
+		{
+			desc: "should return error for runtime not found",
+			podSandboxConfig: &runtime.PodSandboxConfig{
+				Annotations: map[string]string{
+					annotations.RuntimeHandler: "runtime-not-exists",
+				},
+			},
+			expectErr:         fmt.Errorf(`experimental: failed to get sandbox runtime for runtime-not-exists, err: no runtime for "runtime-not-exists" is configured`),
+			expectSnapshotter: "",
+		},
+		{
+			desc: "should return snapshotter provided in podSandboxConfig.Annotations",
+			podSandboxConfig: &runtime.PodSandboxConfig{
+				Annotations: map[string]string{
+					annotations.RuntimeHandler: "exiting-runtime",
+				},
+			},
+			expectSnapshotter: runtimeSnapshotter,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			cri := newTestCRIService()
+			cri.config.ContainerdConfig.Snapshotter = defaultSnashotter
+			cri.config.ContainerdConfig.Runtimes = make(map[string]criconfig.Runtime)
+			cri.config.ContainerdConfig.Runtimes["exiting-runtime"] = criconfig.Runtime{
+				Snapshotter: runtimeSnapshotter,
+			}
+			snapshotter, err := cri.snapshotterFromPodSandboxConfig(context.Background(), "test-image", tt.podSandboxConfig)
+			assert.Equal(t, tt.expectSnapshotter, snapshotter)
+			assert.Equal(t, tt.expectErr, err)
+		})
 	}
 }
 func TestImageGetLabels(t *testing.T) {

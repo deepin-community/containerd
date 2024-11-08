@@ -1,5 +1,4 @@
 //go:build !windows && !darwin
-// +build !windows,!darwin
 
 /*
    Copyright The containerd Authors.
@@ -23,11 +22,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"runtime"
 	"testing"
 
+	"github.com/moby/sys/userns"
 	"github.com/stretchr/testify/assert"
-
-	"github.com/containerd/containerd/pkg/userns"
 )
 
 func cleanupTest() {
@@ -149,9 +148,11 @@ func TestHostDevicesAllValid(t *testing.T) {
 	}
 
 	for _, device := range devices {
-		// Devices can't have major number 0.
-		if device.Major == 0 {
-			t.Errorf("device entry %+v has zero major number", device)
+		if runtime.GOOS != "freebsd" {
+			// On Linux, devices can't have major number 0.
+			if device.Major == 0 {
+				t.Errorf("device entry %+v has zero major number", device)
+			}
 		}
 		switch device.Type {
 		case blockDevice, charDevice:

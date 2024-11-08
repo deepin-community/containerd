@@ -98,12 +98,12 @@ func TestContainerdPlugin(t *testing.T) {
 		Type: GRPCPlugin,
 		ID:   "leases",
 		Requires: []Type{
-			ServicePlugin,
+			LeasePlugin,
 		},
 	})
 	Register(&Registration{
-		Type: ServicePlugin,
-		ID:   services.LeasesService,
+		Type: LeasePlugin,
+		ID:   "manager",
 		Requires: []Type{
 			MetadataPlugin,
 		},
@@ -237,6 +237,19 @@ func TestContainerdPlugin(t *testing.T) {
 		},
 	})
 
+	Register(&Registration{
+		Type: TracingProcessorPlugin,
+		ID:   "otlp",
+	})
+
+	Register(&Registration{
+		Type: InternalPlugin,
+		ID:   "tracing",
+		Requires: []Type{
+			TracingProcessorPlugin,
+		},
+	})
+
 	ordered := Graph(mockPluginFilter)
 	expectedURI := []string{
 		"io.containerd.monitor.v1.cgroups",
@@ -250,7 +263,6 @@ func TestContainerdPlugin(t *testing.T) {
 		"io.containerd.service.v1.introspection-service",
 		"io.containerd.service.v1.namespaces-service",
 		"io.containerd.service.v1.containers-service",
-		"io.containerd.service.v1.leases-service",
 		"io.containerd.differ.v1.walking",
 		"io.containerd.service.v1.diff-service",
 		"io.containerd.service.v1.snapshots-service",
@@ -259,6 +271,7 @@ func TestContainerdPlugin(t *testing.T) {
 		"io.containerd.grpc.v1.content",
 		"io.containerd.grpc.v1.containers",
 		"io.containerd.grpc.v1.events",
+		"io.containerd.lease.v1.manager",
 		"io.containerd.grpc.v1.leases",
 		"io.containerd.grpc.v1.diff",
 		"io.containerd.grpc.v1.snapshots",
@@ -270,6 +283,8 @@ func TestContainerdPlugin(t *testing.T) {
 		"io.containerd.internal.v1.opt",
 		"io.containerd.grpc.v1.cri",
 		"io.containerd.internal.v1.restart",
+		"io.containerd.tracing.processor.v1.otlp",
+		"io.containerd.internal.v1.tracing",
 		"io.containerd.grpc.v1.introspection",
 	}
 	cmpOrdered(t, ordered, expectedURI)

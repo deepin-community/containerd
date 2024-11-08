@@ -20,16 +20,20 @@ import (
 	"context"
 	"errors"
 
+	"google.golang.org/grpc"
+
 	snapshotsapi "github.com/containerd/containerd/api/services/snapshots/v1"
 	"github.com/containerd/containerd/api/types"
 	"github.com/containerd/containerd/errdefs"
-	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/mount"
+	"github.com/containerd/containerd/pkg/deprecation"
 	"github.com/containerd/containerd/plugin"
+	"github.com/containerd/containerd/protobuf"
+	ptypes "github.com/containerd/containerd/protobuf/types"
 	"github.com/containerd/containerd/services"
+	"github.com/containerd/containerd/services/warning"
 	"github.com/containerd/containerd/snapshots"
-	ptypes "github.com/gogo/protobuf/types"
-	"google.golang.org/grpc"
+	"github.com/containerd/log"
 )
 
 func init() {
@@ -38,6 +42,7 @@ func init() {
 		ID:   "snapshots",
 		Requires: []plugin.Type{
 			plugin.ServicePlugin,
+			plugin.WarningPlugin,
 		},
 		InitFn: newService,
 	})
@@ -46,7 +51,9 @@ func init() {
 var empty = &ptypes.Empty{}
 
 type service struct {
-	ss map[string]snapshots.Snapshotter
+	ss       map[string]snapshots.Snapshotter
+	warnings warning.Service
+	snapshotsapi.UnimplementedSnapshotsServer
 }
 
 func newService(ic *plugin.InitContext) (interface{}, error) {
@@ -63,7 +70,14 @@ func newService(ic *plugin.InitContext) (interface{}, error) {
 		return nil, err
 	}
 	ss := i.(map[string]snapshots.Snapshotter)
-	return &service{ss: ss}, nil
+	w, err := ic.Get(plugin.WarningPlugin)
+	if err != nil {
+		return nil, err
+	}
+	return &service{
+		ss:       ss,
+		warnings: w.(warning.Service),
+	}, nil
 }
 
 func (s *service) getSnapshotter(name string) (snapshots.Snapshotter, error) {
@@ -145,6 +159,7 @@ func (s *service) Commit(ctx context.Context, cr *snapshotsapi.CommitSnapshotReq
 	if err != nil {
 		return nil, err
 	}
+	s.emitSnapshotterWarning(ctx, cr.Snapshotter)
 
 	var opts []snapshots.Opt
 	if cr.Labels != nil {
@@ -208,8 +223,8 @@ func (s *service) List(sr *snapshotsapi.ListSnapshotsRequest, ss snapshotsapi.Sn
 	}
 
 	var (
-		buffer    []snapshotsapi.Info
-		sendBlock = func(block []snapshotsapi.Info) error {
+		buffer    []*snapshotsapi.Info
+		sendBlock = func(block []*snapshotsapi.Info) error {
 			return ss.Send(&snapshotsapi.ListSnapshotsResponse{
 				Info: block,
 			})
@@ -274,23 +289,31 @@ func (s *service) Cleanup(ctx context.Context, cr *snapshotsapi.CleanupRequest) 
 	return empty, nil
 }
 
-func fromKind(kind snapshots.Kind) snapshotsapi.Kind {
-	if kind == snapshots.KindActive {
-		return snapshotsapi.KindActive
+func (s *service) emitSnapshotterWarning(ctx context.Context, sn string) {
+	switch sn {
+	case "aufs":
+		log.G(ctx).Warn("aufs snapshotter is deprecated")
+		s.warnings.Emit(ctx, deprecation.AUFSSnapshotter)
 	}
-	if kind == snapshots.KindView {
-		return snapshotsapi.KindView
-	}
-	return snapshotsapi.KindCommitted
 }
 
-func fromInfo(info snapshots.Info) snapshotsapi.Info {
-	return snapshotsapi.Info{
+func fromKind(kind snapshots.Kind) snapshotsapi.Kind {
+	if kind == snapshots.KindActive {
+		return snapshotsapi.Kind_ACTIVE
+	}
+	if kind == snapshots.KindView {
+		return snapshotsapi.Kind_VIEW
+	}
+	return snapshotsapi.Kind_COMMITTED
+}
+
+func fromInfo(info snapshots.Info) *snapshotsapi.Info {
+	return &snapshotsapi.Info{
 		Name:      info.Name,
 		Parent:    info.Parent,
 		Kind:      fromKind(info.Kind),
-		CreatedAt: info.Created,
-		UpdatedAt: info.Updated,
+		CreatedAt: protobuf.ToTimestamp(info.Created),
+		UpdatedAt: protobuf.ToTimestamp(info.Updated),
 		Labels:    info.Labels,
 	}
 }
@@ -298,7 +321,7 @@ func fromInfo(info snapshots.Info) snapshotsapi.Info {
 func fromUsage(usage snapshots.Usage) *snapshotsapi.UsageResponse {
 	return &snapshotsapi.UsageResponse{
 		Inodes: usage.Inodes,
-		Size_:  usage.Size,
+		Size:   usage.Size,
 	}
 }
 
@@ -308,28 +331,29 @@ func fromMounts(mounts []mount.Mount) []*types.Mount {
 		out[i] = &types.Mount{
 			Type:    m.Type,
 			Source:  m.Source,
+			Target:  m.Target,
 			Options: m.Options,
 		}
 	}
 	return out
 }
 
-func toInfo(info snapshotsapi.Info) snapshots.Info {
+func toInfo(info *snapshotsapi.Info) snapshots.Info {
 	return snapshots.Info{
 		Name:    info.Name,
 		Parent:  info.Parent,
 		Kind:    toKind(info.Kind),
-		Created: info.CreatedAt,
-		Updated: info.UpdatedAt,
+		Created: protobuf.FromTimestamp(info.CreatedAt),
+		Updated: protobuf.FromTimestamp(info.UpdatedAt),
 		Labels:  info.Labels,
 	}
 }
 
 func toKind(kind snapshotsapi.Kind) snapshots.Kind {
-	if kind == snapshotsapi.KindActive {
+	if kind == snapshotsapi.Kind_ACTIVE {
 		return snapshots.KindActive
 	}
-	if kind == snapshotsapi.KindView {
+	if kind == snapshotsapi.Kind_VIEW {
 		return snapshots.KindView
 	}
 	return snapshots.KindCommitted

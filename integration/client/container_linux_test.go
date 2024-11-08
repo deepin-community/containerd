@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -30,19 +31,25 @@ import (
 	"testing"
 	"time"
 
-	"github.com/containerd/cgroups"
-	cgroupsv2 "github.com/containerd/cgroups/v2"
+	"github.com/containerd/cgroups/v3"
+	"github.com/containerd/cgroups/v3/cgroup1"
+	cgroupsv2 "github.com/containerd/cgroups/v3/cgroup2"
+
 	. "github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/containers"
 	"github.com/containerd/containerd/errdefs"
+	"github.com/containerd/containerd/integration/failpoint"
 	"github.com/containerd/containerd/oci"
+	"github.com/containerd/containerd/pkg/fifosync"
 	"github.com/containerd/containerd/plugin"
 	"github.com/containerd/containerd/runtime/linux/runctypes"
 	"github.com/containerd/containerd/runtime/v2/runc/options"
 	"github.com/containerd/containerd/sys"
+
 	"github.com/opencontainers/runtime-spec/specs-go"
-	exec "golang.org/x/sys/execabs"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 )
 
@@ -93,7 +100,7 @@ func TestTaskUpdate(t *testing.T) {
 	}
 
 	var (
-		cgroup  cgroups.Cgroup
+		cgroup  cgroup1.Cgroup
 		cgroup2 *cgroupsv2.Manager
 	)
 	// check that the task has a limit of 32mb
@@ -102,7 +109,7 @@ func TestTaskUpdate(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		cgroup2, err = cgroupsv2.LoadManager("/sys/fs/cgroup", groupPath)
+		cgroup2, err = cgroupsv2.Load(groupPath)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -114,11 +121,11 @@ func TestTaskUpdate(t *testing.T) {
 			t.Fatalf("expected memory limit to be set to %d but received %d", limit, stat.Memory.UsageLimit)
 		}
 	} else {
-		cgroup, err = cgroups.Load(cgroups.V1, cgroups.PidPath(int(task.Pid())))
+		cgroup, err = cgroup1.Load(cgroup1.PidPath(int(task.Pid())))
 		if err != nil {
 			t.Fatal(err)
 		}
-		stat, err := cgroup.Stat(cgroups.IgnoreNotExist)
+		stat, err := cgroup.Stat(cgroup1.IgnoreNotExist)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -144,7 +151,7 @@ func TestTaskUpdate(t *testing.T) {
 			t.Errorf("expected memory limit to be set to %d but received %d", limit, stat.Memory.UsageLimit)
 		}
 	} else {
-		stat, err := cgroup.Stat(cgroups.IgnoreNotExist)
+		stat, err := cgroup.Stat(cgroup1.IgnoreNotExist)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -160,6 +167,10 @@ func TestTaskUpdate(t *testing.T) {
 }
 
 func TestShimInCgroup(t *testing.T) {
+	if noShimCgroup {
+		t.Skip("shim cgroup is not enabled")
+	}
+
 	t.Parallel()
 
 	client, err := newClient(t, address)
@@ -185,7 +196,7 @@ func TestShimInCgroup(t *testing.T) {
 	// create a cgroup for the shim to use
 	path := "/containerd/shim"
 	var (
-		cg  cgroups.Cgroup
+		cg  cgroup1.Cgroup
 		cg2 *cgroupsv2.Manager
 	)
 	if cgroups.Mode() == cgroups.Unified {
@@ -195,7 +206,7 @@ func TestShimInCgroup(t *testing.T) {
 		}
 		defer cg2.Delete()
 	} else {
-		cg, err = cgroups.New(cgroups.V1, cgroups.StaticPath(path), &specs.LinuxResources{})
+		cg, err = cgroup1.New(cgroup1.StaticPath(path), &specs.LinuxResources{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -223,7 +234,7 @@ func TestShimInCgroup(t *testing.T) {
 			t.Errorf("created cgroup should have at least one process inside: %d", len(processes))
 		}
 	} else {
-		processes, err := cg.Processes(cgroups.Devices, false)
+		processes, err := cg.Processes(cgroup1.Devices, false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1002,7 +1013,7 @@ func TestDaemonRestartWithRunningShim(t *testing.T) {
 		t.Errorf(`first task.Wait() should have failed with "transport is closing"`)
 	}
 
-	waitCtx, cancel := context.WithTimeout(ctx, 1*time.Second)
+	waitCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	c, err := ctrd.waitForStart(waitCtx)
 	cancel()
 	if err != nil {
@@ -1117,7 +1128,6 @@ func TestContainerKillInitPidHost(t *testing.T) {
 }
 
 func TestUserNamespaces(t *testing.T) {
-	t.Parallel()
 	t.Run("WritableRootFS", func(t *testing.T) { testUserNamespaces(t, false) })
 	// see #1373 and runc#1572
 	t.Run("ReadonlyRootFS", func(t *testing.T) { testUserNamespaces(t, true) })
@@ -1409,7 +1419,7 @@ func TestShimOOMScore(t *testing.T) {
 
 	path := "/containerd/oomshim"
 	var (
-		cg  cgroups.Cgroup
+		cg  cgroup1.Cgroup
 		cg2 *cgroupsv2.Manager
 	)
 	if cgroups.Mode() == cgroups.Unified {
@@ -1419,7 +1429,7 @@ func TestShimOOMScore(t *testing.T) {
 		}
 		defer cg2.Delete()
 	} else {
-		cg, err = cgroups.New(cgroups.V1, cgroups.StaticPath(path), &specs.LinuxResources{})
+		cg, err = cgroup1.New(cgroup1.StaticPath(path), &specs.LinuxResources{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1469,7 +1479,7 @@ func TestShimOOMScore(t *testing.T) {
 			}
 		}
 	} else {
-		processes, err := cg.Processes(cgroups.Devices, false)
+		processes, err := cg.Processes(cgroup1.Devices, false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1493,4 +1503,306 @@ func TestShimOOMScore(t *testing.T) {
 		t.Fatal("timeout waiting for task exit event")
 	case <-statusC:
 	}
+}
+
+// TestIssue9103 is used as regression case for issue 9103.
+//
+// The runc-fp will kill the init process so that the shim should return stopped
+// status after container.NewTask. It's used to simulate that the runc-init
+// might be killed by oom-kill.
+func TestIssue9103(t *testing.T) {
+	if os.Getenv("RUNC_FLAVOR") == "crun" {
+		t.Skip("skip it when using crun")
+	}
+	if getRuntimeVersion() == "v1" {
+		t.Skip("skip it when using shim v1")
+	}
+
+	client, err := newClient(t, address)
+	require.NoError(t, err)
+	defer client.Close()
+
+	var (
+		image       Image
+		ctx, cancel = testContext(t)
+		id          = t.Name()
+	)
+	defer cancel()
+
+	image, err = client.GetImage(ctx, testImage)
+	require.NoError(t, err)
+
+	for idx, tc := range []struct {
+		desc           string
+		cntrOpts       []NewContainerOpts
+		bakingFn       func(ctx context.Context, t *testing.T, task Task)
+		expectedStatus ProcessStatus
+	}{
+		{
+			desc: "should be created status",
+			cntrOpts: []NewContainerOpts{
+				WithNewSpec(oci.WithImageConfig(image),
+					withProcessArgs("sleep", "30"),
+				),
+			},
+			bakingFn:       func(context.Context, *testing.T, Task) {},
+			expectedStatus: Created,
+		},
+		{
+			desc: "should be stopped status if init has been killed",
+			cntrOpts: []NewContainerOpts{
+				WithNewSpec(oci.WithImageConfig(image),
+					withProcessArgs("sleep", "30"),
+					oci.WithAnnotations(map[string]string{
+						"oci.runc.failpoint.profile": "issue9103",
+					}),
+				),
+				WithRuntime(client.Runtime(), &options.Options{
+					BinaryName: "runc-fp",
+				}),
+			},
+			bakingFn: func(ctx context.Context, t *testing.T, task Task) {
+				waitCh, err := task.Wait(ctx)
+				require.NoError(t, err)
+
+				select {
+				case <-time.After(30 * time.Second):
+					t.Fatal("timeout")
+				case e := <-waitCh:
+					require.NoError(t, e.Error())
+				}
+			},
+			expectedStatus: Stopped,
+		},
+	} {
+		tc := tc
+		tName := fmt.Sprintf("%s%d", id, idx)
+		t.Run(tc.desc, func(t *testing.T) {
+			container, err := client.NewContainer(ctx, tName,
+				append([]NewContainerOpts{WithNewSnapshot(tName, image)}, tc.cntrOpts...)...,
+			)
+			require.NoError(t, err)
+			defer container.Delete(ctx, WithSnapshotCleanup)
+
+			cctx, ccancel := context.WithTimeout(ctx, 30*time.Second)
+			task, err := container.NewTask(cctx, empty())
+			ccancel()
+			require.NoError(t, err)
+
+			defer task.Delete(ctx, WithProcessKill)
+
+			tc.bakingFn(ctx, t, task)
+
+			status, err := task.Status(ctx)
+			require.NoError(t, err)
+			require.Equal(t, status.Status, tc.expectedStatus)
+		})
+	}
+}
+
+// TestIssue10589 is used as regression case for issue 10589.
+//
+// This issue was caused by a race between init exits and new exec process tracking inside the shim.  The test operates
+// by controlling the time between when the shim invokes "runc exec" and when the actual "runc exec" is triggered.  This
+// allows validating that races for shim state tracking between pre- and post-start of the exec process do not exist.
+//
+// The workflow is as follows:
+// 1. Create a container as normal
+// 2. Make an exec1 using runc-fp with delayexec
+// 3. Wait until the exec is waiting to start (triggered by delayexec)
+// 4. Kill the container init process (signalling it is easiest)
+// 5. Make an exec2 using runc-fp with delayexec
+// 6. Wait until the exec is waiting to start
+// 7. Allow exec1 to proceed
+// 8. Allow exec2 to proceed
+// 9. See that the container has exited and all execs have exited too
+//
+// https://github.com/containerd/containerd/issues/10589
+func TestIssue10589(t *testing.T) {
+	if f := os.Getenv("RUNC_FLAVOR"); f != "" && f != "runc" {
+		t.Skip("test requires runc")
+	}
+	if rt := os.Getenv("TEST_RUNTIME"); rt != "" && rt != plugin.RuntimeRuncV2 {
+		t.Skip("test requires io.containerd.runc.v2")
+	}
+
+	client, err := newClient(t, address)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		client.Close()
+	})
+
+	var (
+		image       Image
+		ctx, cancel = testContext(t)
+		id          = t.Name()
+	)
+	t.Cleanup(cancel)
+
+	image, err = client.GetImage(ctx, testImage)
+	require.NoError(t, err)
+
+	// 1. Create a sleeping container
+	t.Log("1. Create a sleeping container")
+	container, err := client.NewContainer(ctx, id,
+		WithNewSnapshot(id, image),
+		WithNewSpec(oci.WithImageConfig(image),
+			withProcessArgs("sleep", "inf"),
+			oci.WithAnnotations(map[string]string{
+				"oci.runc.failpoint.profile": "delayExec",
+			}),
+		),
+		WithRuntime(client.Runtime(), &options.Options{
+			BinaryName: "runc-fp",
+		}),
+	)
+	require.NoError(t, err, "create container")
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		err := container.Delete(ctx, WithSnapshotCleanup)
+		if err != nil {
+			t.Log("delete err", err)
+		}
+		cancel()
+	})
+
+	task, err := container.NewTask(ctx, empty())
+	require.NoError(t, err, "create task")
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		st, err := task.Delete(ctx, WithProcessKill)
+		t.Log("exit status", st)
+		if err != nil {
+			t.Log("kill err", err)
+		}
+		cancel()
+	})
+
+	err = task.Start(ctx)
+	require.NoError(t, err, "start container")
+
+	status, err := task.Status(ctx)
+	require.NoError(t, err, "container status")
+	require.Equal(t, Running, status.Status)
+
+	// 2. Create an exec
+	t.Log("2. Create exec1")
+	exec1ReadyFifo, err := fifosync.NewWaiter(filepath.Join(t.TempDir(), "exec1-ready.fifo"), 0600)
+	require.NoError(t, err, "create exec1 ready fifo")
+	exec1DelayFifo, err := fifosync.NewTrigger(filepath.Join(t.TempDir(), "exec1-delay.fifo"), 0600)
+	require.NoError(t, err, "create exec1 delay fifo")
+	exec1, err := task.Exec(ctx, "exec1", &specs.Process{
+		Args: []string{"/bin/sleep", "301"},
+		Cwd:  "/",
+		Env: []string{
+			failpoint.DelayExecReadyEnv + "=" + exec1ReadyFifo.Name(),
+			failpoint.DelayExecDelayEnv + "=" + exec1DelayFifo.Name(),
+		},
+	}, cio.NullIO)
+	require.NoError(t, err, "create exec1")
+
+	exec1done := make(chan struct{})
+	go func() {
+		defer close(exec1done)
+		t.Log("Starting exec1")
+		err := exec1.Start(ctx)
+		assert.Error(t, err, "start exec1")
+		t.Logf("error starting exec1: %s", err)
+	}()
+
+	// 3. Wait until the exec is waiting to start
+	t.Log("3. Wait until exec1 is waiting to start")
+	err = exec1ReadyFifo.Wait()
+	require.NoError(t, err, "open exec1 fifo")
+
+	// 4. Kill the container init process
+	t.Log("4. Kill the container init process")
+	target := task.Pid()
+	t.Logf("Killing main pid (%v) of container %s", target, container.ID())
+	syscall.Kill(int(target), syscall.SIGKILL)
+	status, err = task.Status(ctx)
+	require.NoError(t, err, "container status")
+	t.Log("container status", status.Status)
+
+	// 5. Make an exec (2) using this failpoint
+	t.Log("5. Create exec2")
+	exec2ReadyFifo, err := fifosync.NewWaiter(filepath.Join(t.TempDir(), "exec2-ready.fifo"), 0600)
+	require.NoError(t, err, "create exec2 ready fifo: %q", exec2ReadyFifo)
+	exec2DelayFifo, err := fifosync.NewTrigger(filepath.Join(t.TempDir(), "exec2-delay.fifo"), 0600)
+	require.NoError(t, err, "create exec2 delay fifo: %q", exec2DelayFifo)
+	exec2, err := task.Exec(ctx, "exec2", &specs.Process{
+		Args: []string{"/bin/sleep", "302"},
+		Cwd:  "/",
+		Env: []string{
+			failpoint.DelayExecReadyEnv + "=" + exec2ReadyFifo.Name(),
+			failpoint.DelayExecDelayEnv + "=" + exec2DelayFifo.Name(),
+		},
+	}, cio.NullIO)
+	require.NoError(t, err, "create exec2")
+
+	exec2done := make(chan struct{})
+	didExec2Run := true
+	go func() {
+		defer close(exec2done)
+		t.Log("Starting exec2")
+		err := exec2.Start(ctx)
+		assert.Error(t, err, "start exec2")
+		t.Logf("error starting exec2: %s", err)
+	}()
+
+	// 6. Wait until the exec is waiting to start
+	t.Log("6. Wait until exec2 is waiting to start")
+	exec2ready := make(chan struct{})
+	go func() {
+		exec2ReadyFifo.Wait()
+		close(exec2ready)
+	}()
+	select {
+	case <-exec2ready:
+	case <-exec2done:
+		didExec2Run = false
+	}
+
+	// 7. Allow exec=1 to proceed
+	t.Log("7. Allow exec=1 to proceed")
+	err = exec1DelayFifo.Trigger()
+	assert.NoError(t, err, "trigger exec1 fifo")
+	status, err = task.Status(ctx)
+	require.NoError(t, err, "container status")
+	t.Log("container status", status.Status)
+	<-exec1done
+	status, err = task.Status(ctx)
+	require.NoError(t, err, "container status")
+	t.Log("container status", status.Status)
+
+	// 8. Allow exec=2 to proceed
+	if didExec2Run {
+		t.Log("8. Allow exec2 to proceed")
+		err = exec2DelayFifo.Trigger()
+		assert.NoError(t, err, "trigger exec2 fifo")
+		status, err = task.Status(ctx)
+		require.NoError(t, err, "container status")
+		t.Log("container status", status.Status)
+		<-exec2done
+		status, err = task.Status(ctx)
+		require.NoError(t, err, "container status")
+		t.Log("container status", status.Status)
+	} else {
+		t.Log("8. Skip exec2")
+	}
+
+	// 9. Validate
+	t.Log("9. Validate")
+	status, err = exec1.Status(ctx)
+	require.NoError(t, err, "exec1 status")
+	t.Logf("exec1 status: %s", status.Status)
+	assert.Equal(t, Created, status.Status)
+	status, err = exec2.Status(ctx)
+	require.NoError(t, err, "exec2 status")
+	t.Logf("exec2 status: %s", status.Status)
+	assert.Equal(t, Created, status.Status)
+	status, err = task.Status(ctx)
+	t.Logf("task status: %s", status.Status)
+	require.NoError(t, err, "container status")
+	assert.Equal(t, Stopped, status.Status)
 }

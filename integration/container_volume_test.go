@@ -19,9 +19,11 @@ package integration
 import (
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"testing"
 	"time"
 
+	"github.com/containerd/containerd/integration/images"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	runtime "k8s.io/cri-api/pkg/apis/runtime/v1"
@@ -98,9 +100,14 @@ func TestContainerSymlinkVolumes(t *testing.T) {
 			)
 
 			var (
-				testImage     = GetImage(BusyBox)
-				containerName = "test-container"
+				testImage          = images.Get(images.BusyBox)
+				containerName      = "test-container"
+				containerMountPath = "/mounted_file"
 			)
+
+			if goruntime.GOOS == "windows" {
+				containerMountPath = filepath.Clean("C:" + containerMountPath)
+			}
 
 			EnsureImageExists(t, testImage)
 
@@ -108,9 +115,9 @@ func TestContainerSymlinkVolumes(t *testing.T) {
 			cnConfig := ContainerConfig(
 				containerName,
 				testImage,
-				WithCommand("cat", "/mounted_file"),
+				WithCommand("cat", containerMountPath),
 				WithLogPath(containerName),
-				WithVolumeMount(file, "/mounted_file"),
+				WithVolumeMount(file, containerMountPath),
 			)
 
 			cn, err := runtimeService.CreateContainer(sb, cnConfig, sbConfig)

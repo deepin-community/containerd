@@ -30,13 +30,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/containerd/containerd/content"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/containerd/containerd/containers"
+	"github.com/containerd/containerd/content"
+	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/namespaces"
-	"github.com/opencontainers/runtime-spec/specs-go"
 )
 
 type blob []byte
@@ -90,41 +93,41 @@ func (i fakeImage) ContentStore() content.Store {
 func (i fakeImage) ReaderAt(ctx context.Context, dec ocispec.Descriptor) (content.ReaderAt, error) {
 	blob, found := i.blobs[dec.Digest.String()]
 	if !found {
-		return nil, errors.New("not found")
+		return nil, errdefs.ErrNotFound
 	}
 	return blob, nil
 }
 
 func (i fakeImage) Info(ctx context.Context, dgst digest.Digest) (content.Info, error) {
-	return content.Info{}, errors.New("not implemented")
+	return content.Info{}, errdefs.ErrNotImplemented
 }
 
 func (i fakeImage) Update(ctx context.Context, info content.Info, fieldpaths ...string) (content.Info, error) {
-	return content.Info{}, errors.New("not implemented")
+	return content.Info{}, errdefs.ErrNotImplemented
 }
 
 func (i fakeImage) Walk(ctx context.Context, fn content.WalkFunc, filters ...string) error {
-	return errors.New("not implemented")
+	return errdefs.ErrNotImplemented
 }
 
 func (i fakeImage) Delete(ctx context.Context, dgst digest.Digest) error {
-	return errors.New("not implemented")
+	return errdefs.ErrNotImplemented
 }
 
 func (i fakeImage) Status(ctx context.Context, ref string) (content.Status, error) {
-	return content.Status{}, errors.New("not implemented")
+	return content.Status{}, errdefs.ErrNotImplemented
 }
 
 func (i fakeImage) ListStatuses(ctx context.Context, filters ...string) ([]content.Status, error) {
-	return nil, errors.New("not implemented")
+	return nil, errdefs.ErrNotImplemented
 }
 
 func (i fakeImage) Abort(ctx context.Context, ref string) error {
-	return errors.New("not implemented")
+	return errdefs.ErrNotImplemented
 }
 
 func (i fakeImage) Writer(ctx context.Context, opts ...content.WriterOpt) (content.Writer, error) {
-	return nil, errors.New("not implemented")
+	return nil, errdefs.ErrNotImplemented
 }
 
 func TestReplaceOrAppendEnvValues(t *testing.T) {
@@ -183,22 +186,6 @@ func Contains(a []string, x string) bool {
 		}
 	}
 	return false
-}
-
-func TestWithDefaultPathEnv(t *testing.T) {
-	t.Parallel()
-	s := Spec{}
-	s.Process = &specs.Process{
-		Env: []string{},
-	}
-	var (
-		defaultUnixEnv = "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-		ctx            = namespaces.WithNamespace(context.Background(), "test")
-	)
-	WithDefaultPathEnv(ctx, nil, nil, &s)
-	if !Contains(s.Process.Env, defaultUnixEnv) {
-		t.Fatal("default Unix Env not found")
-	}
 }
 
 func TestWithProcessCwd(t *testing.T) {
@@ -298,13 +285,20 @@ func TestWithDefaultSpec(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var expected Spec
-	var err error
-	if runtime.GOOS == "windows" {
+	var (
+		expected Spec
+		err      error
+	)
+
+	switch runtime.GOOS {
+	case "windows":
 		err = populateDefaultWindowsSpec(ctx, &expected, c.ID)
-	} else {
+	case "darwin":
+		err = populateDefaultDarwinSpec(&expected)
+	default:
 		err = populateDefaultUnixSpec(ctx, &expected, c.ID)
 	}
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -703,5 +697,77 @@ func TestWithoutMounts(t *testing.T) {
 
 	if !reflect.DeepEqual(expected, s.Mounts) {
 		t.Fatalf("expected %+v, got %+v", expected, s.Mounts)
+	}
+}
+
+func TestWithWindowsDevice(t *testing.T) {
+	testcases := []struct {
+		name   string
+		idType string
+		id     string
+
+		expectError            bool
+		expectedWindowsDevices []specs.WindowsDevice
+	}{
+		{
+			name:        "empty_idType_and_id",
+			idType:      "",
+			id:          "",
+			expectError: true,
+		},
+		{
+			name:        "empty_idType",
+			idType:      "",
+			id:          "5B45201D-F2F2-4F3B-85BB-30FF1F953599",
+			expectError: true,
+		},
+		{
+			name:   "empty_id",
+			idType: "class",
+			id:     "",
+
+			expectError:            false,
+			expectedWindowsDevices: []specs.WindowsDevice{{ID: "", IDType: "class"}},
+		},
+		{
+			name:   "idType_and_id",
+			idType: "class",
+			id:     "5B45201D-F2F2-4F3B-85BB-30FF1F953599",
+
+			expectError:            false,
+			expectedWindowsDevices: []specs.WindowsDevice{{ID: "5B45201D-F2F2-4F3B-85BB-30FF1F953599", IDType: "class"}},
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			spec := Spec{
+				Version: specs.Version,
+				Root:    &specs.Root{},
+				Windows: &specs.Windows{},
+			}
+
+			opts := []SpecOpts{
+				WithWindowsDevice(tc.idType, tc.id),
+			}
+
+			for _, opt := range opts {
+				if err := opt(nil, nil, nil, &spec); err != nil {
+					if tc.expectError {
+						assert.Error(t, err)
+					} else {
+						require.NoError(t, err)
+					}
+				}
+			}
+
+			if len(tc.expectedWindowsDevices) != 0 {
+				require.NotNil(t, spec.Windows)
+				require.NotNil(t, spec.Windows.Devices)
+				assert.ElementsMatch(t, spec.Windows.Devices, tc.expectedWindowsDevices)
+			} else if spec.Windows != nil && spec.Windows.Devices != nil {
+				assert.ElementsMatch(t, spec.Windows.Devices, tc.expectedWindowsDevices)
+			}
+		})
 	}
 }

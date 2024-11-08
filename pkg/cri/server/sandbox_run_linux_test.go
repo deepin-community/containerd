@@ -91,6 +91,14 @@ func getRunPodSandboxTestData() (*runtime.PodSandboxConfig, *imagespec.ImageConf
 			assert.NotEqual(t, "", spec.Process.SelinuxLabel)
 			assert.NotEqual(t, "", spec.Linux.MountLabel)
 		}
+
+		assert.Contains(t, spec.Mounts, runtimespec.Mount{
+			Source:      "/test/root/sandboxes/test-id/resolv.conf",
+			Destination: resolvConfPath,
+			Type:        "bind",
+			Options:     []string{"rbind", "ro", "nosuid", "nodev", "noexec"},
+		})
+
 	}
 	return config, imageConfig, specCheck
 }
@@ -98,6 +106,17 @@ func getRunPodSandboxTestData() (*runtime.PodSandboxConfig, *imagespec.ImageConf
 func TestLinuxSandboxContainerSpec(t *testing.T) {
 	testID := "test-id"
 	nsPath := "test-cni"
+	idMap := runtime.IDMapping{
+		HostId:      1000,
+		ContainerId: 1000,
+		Length:      10,
+	}
+	expIDMap := runtimespec.LinuxIDMapping{
+		HostID:      1000,
+		ContainerID: 1000,
+		Size:        10,
+	}
+
 	for desc, test := range map[string]struct {
 		configChange func(*runtime.PodSandboxConfig)
 		specCheck    func(*testing.T, *runtimespec.Spec)
@@ -122,6 +141,29 @@ func TestLinuxSandboxContainerSpec(t *testing.T) {
 				})
 				assert.Contains(t, spec.Linux.Sysctl["net.ipv4.ip_unprivileged_port_start"], "0")
 				assert.Contains(t, spec.Linux.Sysctl["net.ipv4.ping_group_range"], "0 2147483647")
+				assert.NotContains(t, spec.Linux.Namespaces, runtimespec.LinuxNamespace{
+					Type: runtimespec.UserNamespace,
+				})
+			},
+		},
+		"spec shouldn't have ping_group_range if userns are in use": {
+			configChange: func(c *runtime.PodSandboxConfig) {
+				c.Linux.SecurityContext = &runtime.LinuxSandboxSecurityContext{
+					NamespaceOptions: &runtime.NamespaceOption{
+						UsernsOptions: &runtime.UserNamespace{
+							Mode: runtime.NamespaceMode_POD,
+							Uids: []*runtime.IDMapping{&idMap},
+							Gids: []*runtime.IDMapping{&idMap},
+						},
+					},
+				}
+			},
+			specCheck: func(t *testing.T, spec *runtimespec.Spec) {
+				require.NotNil(t, spec.Linux)
+				assert.Contains(t, spec.Linux.Namespaces, runtimespec.LinuxNamespace{
+					Type: runtimespec.UserNamespace,
+				})
+				assert.NotContains(t, spec.Linux.Sysctl["net.ipv4.ping_group_range"], "0 2147483647")
 			},
 		},
 		"host namespace": {
@@ -149,9 +191,112 @@ func TestLinuxSandboxContainerSpec(t *testing.T) {
 				assert.NotContains(t, spec.Linux.Namespaces, runtimespec.LinuxNamespace{
 					Type: runtimespec.IPCNamespace,
 				})
+				assert.NotContains(t, spec.Linux.Namespaces, runtimespec.LinuxNamespace{
+					Type: runtimespec.UserNamespace,
+				})
 				assert.NotContains(t, spec.Linux.Sysctl["net.ipv4.ip_unprivileged_port_start"], "0")
 				assert.NotContains(t, spec.Linux.Sysctl["net.ipv4.ping_group_range"], "0 2147483647")
 			},
+		},
+		"user namespace": {
+			configChange: func(c *runtime.PodSandboxConfig) {
+				c.Linux.SecurityContext = &runtime.LinuxSandboxSecurityContext{
+					NamespaceOptions: &runtime.NamespaceOption{
+						UsernsOptions: &runtime.UserNamespace{
+							Mode: runtime.NamespaceMode_POD,
+							Uids: []*runtime.IDMapping{&idMap},
+							Gids: []*runtime.IDMapping{&idMap},
+						},
+					},
+				}
+			},
+			specCheck: func(t *testing.T, spec *runtimespec.Spec) {
+				require.NotNil(t, spec.Linux)
+				assert.Contains(t, spec.Linux.Namespaces, runtimespec.LinuxNamespace{
+					Type: runtimespec.UserNamespace,
+				})
+				require.Equal(t, spec.Linux.UIDMappings, []runtimespec.LinuxIDMapping{expIDMap})
+				require.Equal(t, spec.Linux.GIDMappings, []runtimespec.LinuxIDMapping{expIDMap})
+
+			},
+		},
+		"user namespace mode node and mappings": {
+			configChange: func(c *runtime.PodSandboxConfig) {
+				c.Linux.SecurityContext = &runtime.LinuxSandboxSecurityContext{
+					NamespaceOptions: &runtime.NamespaceOption{
+						UsernsOptions: &runtime.UserNamespace{
+							Mode: runtime.NamespaceMode_NODE,
+							Uids: []*runtime.IDMapping{&idMap},
+							Gids: []*runtime.IDMapping{&idMap},
+						},
+					},
+				}
+			},
+			expectErr: true,
+		},
+		"user namespace with several mappings": {
+			configChange: func(c *runtime.PodSandboxConfig) {
+				c.Linux.SecurityContext = &runtime.LinuxSandboxSecurityContext{
+					NamespaceOptions: &runtime.NamespaceOption{
+						UsernsOptions: &runtime.UserNamespace{
+							Mode: runtime.NamespaceMode_NODE,
+							Uids: []*runtime.IDMapping{&idMap, &idMap},
+							Gids: []*runtime.IDMapping{&idMap, &idMap},
+						},
+					},
+				}
+			},
+			expectErr: true,
+		},
+		"user namespace with uneven mappings": {
+			configChange: func(c *runtime.PodSandboxConfig) {
+				c.Linux.SecurityContext = &runtime.LinuxSandboxSecurityContext{
+					NamespaceOptions: &runtime.NamespaceOption{
+						UsernsOptions: &runtime.UserNamespace{
+							Mode: runtime.NamespaceMode_NODE,
+							Uids: []*runtime.IDMapping{&idMap, &idMap},
+							Gids: []*runtime.IDMapping{&idMap},
+						},
+					},
+				}
+			},
+			expectErr: true,
+		},
+		"user namespace mode container": {
+			configChange: func(c *runtime.PodSandboxConfig) {
+				c.Linux.SecurityContext = &runtime.LinuxSandboxSecurityContext{
+					NamespaceOptions: &runtime.NamespaceOption{
+						UsernsOptions: &runtime.UserNamespace{
+							Mode: runtime.NamespaceMode_CONTAINER,
+						},
+					},
+				}
+			},
+			expectErr: true,
+		},
+		"user namespace mode target": {
+			configChange: func(c *runtime.PodSandboxConfig) {
+				c.Linux.SecurityContext = &runtime.LinuxSandboxSecurityContext{
+					NamespaceOptions: &runtime.NamespaceOption{
+						UsernsOptions: &runtime.UserNamespace{
+							Mode: runtime.NamespaceMode_TARGET,
+						},
+					},
+				}
+			},
+			expectErr: true,
+		},
+		"user namespace unknown mode": {
+			configChange: func(c *runtime.PodSandboxConfig) {
+				c.Linux.SecurityContext = &runtime.LinuxSandboxSecurityContext{
+					NamespaceOptions: &runtime.NamespaceOption{
+						UsernsOptions: &runtime.UserNamespace{
+							Mode: runtime.NamespaceMode(100),
+						},
+					},
+				}
+			},
+			expectErr: true,
 		},
 		"should set supplemental groups correctly": {
 			configChange: func(c *runtime.PodSandboxConfig) {
@@ -238,26 +383,27 @@ func TestLinuxSandboxContainerSpec(t *testing.T) {
 			},
 		},
 	} {
-		t.Logf("TestCase %q", desc)
-		c := newTestCRIService()
-		c.config.EnableUnprivilegedICMP = true
-		c.config.EnableUnprivilegedPorts = true
-		config, imageConfig, specCheck := getRunPodSandboxTestData()
-		if test.configChange != nil {
-			test.configChange(config)
-		}
-		spec, err := c.sandboxContainerSpec(testID, config, imageConfig, nsPath, nil)
-		if test.expectErr {
-			assert.Error(t, err)
-			assert.Nil(t, spec)
-			continue
-		}
-		assert.NoError(t, err)
-		assert.NotNil(t, spec)
-		specCheck(t, testID, spec)
-		if test.specCheck != nil {
-			test.specCheck(t, spec)
-		}
+		t.Run(desc, func(t *testing.T) {
+			c := newTestCRIService()
+			c.config.EnableUnprivilegedICMP = true
+			c.config.EnableUnprivilegedPorts = true
+			config, imageConfig, specCheck := getRunPodSandboxTestData()
+			if test.configChange != nil {
+				test.configChange(config)
+			}
+			spec, err := c.sandboxContainerSpec(testID, config, imageConfig, nsPath, nil)
+			if test.expectErr {
+				assert.Error(t, err)
+				assert.Nil(t, spec)
+				return
+			}
+			assert.NoError(t, err)
+			assert.NotNil(t, spec)
+			specCheck(t, testID, spec)
+			if test.specCheck != nil {
+				test.specCheck(t, spec)
+			}
+		})
 	}
 }
 
@@ -351,6 +497,80 @@ options timeout:1
 				},
 			},
 		},
+		"should create empty /etc/resolv.conf if DNSOptions is empty": {
+			dnsConfig: &runtime.DNSConfig{},
+			ipcMode:   runtime.NamespaceMode_NODE,
+			expectedCalls: []ostesting.CalledDetail{
+				{
+					Name: "Hostname",
+				},
+				{
+					Name: "WriteFile",
+					Arguments: []interface{}{
+						filepath.Join(testRootDir, sandboxesDir, testID, "hostname"),
+						[]byte(realhostname + "\n"),
+						os.FileMode(0644),
+					},
+				},
+				{
+					Name: "CopyFile",
+					Arguments: []interface{}{
+						"/etc/hosts",
+						filepath.Join(testRootDir, sandboxesDir, testID, "hosts"),
+						os.FileMode(0644),
+					},
+				},
+				{
+					Name: "WriteFile",
+					Arguments: []interface{}{
+						filepath.Join(testRootDir, sandboxesDir, testID, "resolv.conf"),
+						[]byte{},
+						os.FileMode(0644),
+					},
+				},
+				{
+					Name:      "Stat",
+					Arguments: []interface{}{"/dev/shm"},
+				},
+			},
+		},
+		"should copy host /etc/resolv.conf if DNSOptions is not set": {
+			dnsConfig: nil,
+			ipcMode:   runtime.NamespaceMode_NODE,
+			expectedCalls: []ostesting.CalledDetail{
+				{
+					Name: "Hostname",
+				},
+				{
+					Name: "WriteFile",
+					Arguments: []interface{}{
+						filepath.Join(testRootDir, sandboxesDir, testID, "hostname"),
+						[]byte(realhostname + "\n"),
+						os.FileMode(0644),
+					},
+				},
+				{
+					Name: "CopyFile",
+					Arguments: []interface{}{
+						"/etc/hosts",
+						filepath.Join(testRootDir, sandboxesDir, testID, "hosts"),
+						os.FileMode(0644),
+					},
+				},
+				{
+					Name: "CopyFile",
+					Arguments: []interface{}{
+						filepath.Join("/etc/resolv.conf"),
+						filepath.Join(testRootDir, sandboxesDir, testID, "resolv.conf"),
+						os.FileMode(0644),
+					},
+				},
+				{
+					Name:      "Stat",
+					Arguments: []interface{}{"/dev/shm"},
+				},
+			},
+		},
 		"should create sandbox shm when ipc namespace mode is not NODE": {
 			ipcMode: runtime.NamespaceMode_POD,
 			expectedCalls: []ostesting.CalledDetail{
@@ -429,32 +649,33 @@ options timeout:1
 			},
 		},
 	} {
-		t.Logf("TestCase %q", desc)
-		c := newTestCRIService()
-		c.os.(*ostesting.FakeOS).HostnameFn = func() (string, error) {
-			return realhostname, nil
-		}
-		cfg := &runtime.PodSandboxConfig{
-			Hostname:  test.hostname,
-			DnsConfig: test.dnsConfig,
-			Linux: &runtime.LinuxPodSandboxConfig{
-				SecurityContext: &runtime.LinuxSandboxSecurityContext{
-					NamespaceOptions: &runtime.NamespaceOption{
-						Ipc: test.ipcMode,
+		t.Run(desc, func(t *testing.T) {
+			c := newTestCRIService()
+			c.os.(*ostesting.FakeOS).HostnameFn = func() (string, error) {
+				return realhostname, nil
+			}
+			cfg := &runtime.PodSandboxConfig{
+				Hostname:  test.hostname,
+				DnsConfig: test.dnsConfig,
+				Linux: &runtime.LinuxPodSandboxConfig{
+					SecurityContext: &runtime.LinuxSandboxSecurityContext{
+						NamespaceOptions: &runtime.NamespaceOption{
+							Ipc: test.ipcMode,
+						},
 					},
 				},
-			},
-		}
-		c.setupSandboxFiles(testID, cfg)
-		calls := c.os.(*ostesting.FakeOS).GetCalls()
-		assert.Len(t, calls, len(test.expectedCalls))
-		for i, expected := range test.expectedCalls {
-			if expected.Arguments == nil {
-				// Ignore arguments.
-				expected.Arguments = calls[i].Arguments
 			}
-			assert.Equal(t, expected, calls[i])
-		}
+			c.setupSandboxFiles(testID, cfg)
+			calls := c.os.(*ostesting.FakeOS).GetCalls()
+			assert.Len(t, calls, len(test.expectedCalls))
+			for i, expected := range test.expectedCalls {
+				if expected.Arguments == nil {
+					// Ignore arguments.
+					expected.Arguments = calls[i].Arguments
+				}
+				assert.Equal(t, expected, calls[i])
+			}
+		})
 	}
 }
 
@@ -496,14 +717,15 @@ options timeout:1
 `,
 		},
 	} {
-		t.Logf("TestCase %q", desc)
-		resolvContent, err := parseDNSOptions(test.servers, test.searches, test.options)
-		if test.expectErr {
-			assert.Error(t, err)
-			continue
-		}
-		assert.NoError(t, err)
-		assert.Equal(t, resolvContent, test.expectedContent)
+		t.Run(desc, func(t *testing.T) {
+			resolvContent, err := parseDNSOptions(test.servers, test.searches, test.options)
+			if test.expectErr {
+				assert.Error(t, err)
+				return
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, resolvContent, test.expectedContent)
+		})
 	}
 }
 

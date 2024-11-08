@@ -69,8 +69,8 @@ func WithTaskCheckpoint(im Image) NewTaskOpts {
 			if m.MediaType == images.MediaTypeContainerd1Checkpoint {
 				info.Checkpoint = &types.Descriptor{
 					MediaType:   m.MediaType,
-					Size_:       m.Size,
-					Digest:      m.Digest,
+					Size:        m.Size,
+					Digest:      m.Digest.String(),
 					Annotations: m.Annotations,
 				}
 				return nil
@@ -158,6 +158,12 @@ type ProcessDeleteOpts func(context.Context, Process) error
 
 // WithProcessKill will forcefully kill and delete a process
 func WithProcessKill(ctx context.Context, p Process) error {
+	// Skip killing tasks with PID 0
+	// https://github.com/containerd/containerd/issues/10441
+	if p.Pid() == 0 {
+		return nil
+	}
+
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	// ignore errors to wait and kill as we are forcefully killing

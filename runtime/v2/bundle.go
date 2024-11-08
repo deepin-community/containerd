@@ -21,13 +21,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/containerd/containerd/identifiers"
 	"github.com/containerd/containerd/mount"
 	"github.com/containerd/containerd/namespaces"
+	"github.com/containerd/containerd/oci"
+	"github.com/containerd/typeurl/v2"
+	"github.com/opencontainers/runtime-spec/specs-go"
 )
-
-const configFilename = "config.json"
 
 // LoadBundle loads an existing bundle from disk
 func LoadBundle(ctx context.Context, root, id string) (*Bundle, error) {
@@ -43,7 +45,7 @@ func LoadBundle(ctx context.Context, root, id string) (*Bundle, error) {
 }
 
 // NewBundle returns a new bundle on disk
-func NewBundle(ctx context.Context, root, state, id string, spec []byte) (b *Bundle, err error) {
+func NewBundle(ctx context.Context, root, state, id string, spec typeurl.Any) (b *Bundle, err error) {
 	if err := identifiers.Validate(id); err != nil {
 		return nil, fmt.Errorf("invalid task id %s: %w", id, err)
 	}
@@ -73,8 +75,10 @@ func NewBundle(ctx context.Context, root, state, id string, spec []byte) (b *Bun
 	if err := os.Mkdir(b.Path, 0700); err != nil {
 		return nil, err
 	}
-	if err := prepareBundleDirectoryPermissions(b.Path, spec); err != nil {
-		return nil, err
+	if typeurl.Is(spec, &specs.Spec{}) {
+		if err := prepareBundleDirectoryPermissions(b.Path, spec.GetValue()); err != nil {
+			return nil, err
+		}
 	}
 	paths = append(paths, b.Path)
 	// create working directory for the bundle
@@ -100,9 +104,15 @@ func NewBundle(ctx context.Context, root, state, id string, spec []byte) (b *Bun
 	if err := os.Symlink(work, filepath.Join(b.Path, "work")); err != nil {
 		return nil, err
 	}
-	// write the spec to the bundle
-	err = os.WriteFile(filepath.Join(b.Path, configFilename), spec, 0666)
-	return b, err
+	if spec := spec.GetValue(); spec != nil {
+		// write the spec to the bundle
+		specPath := filepath.Join(b.Path, oci.ConfigFilename)
+		err = os.WriteFile(specPath, spec, 0666)
+		if err != nil {
+			return nil, fmt.Errorf("failed to write bundle spec: %w", err)
+		}
+	}
+	return b, nil
 }
 
 // Bundle represents an OCI bundle
@@ -119,8 +129,10 @@ type Bundle struct {
 func (b *Bundle) Delete() error {
 	work, werr := os.Readlink(filepath.Join(b.Path, "work"))
 	rootfs := filepath.Join(b.Path, "rootfs")
-	if err := mount.UnmountAll(rootfs, 0); err != nil {
-		return fmt.Errorf("unmount rootfs %s: %w", rootfs, err)
+	if runtime.GOOS != "darwin" {
+		if err := mount.UnmountRecursive(rootfs, 0); err != nil {
+			return fmt.Errorf("unmount rootfs %s: %w", rootfs, err)
+		}
 	}
 	if err := os.Remove(rootfs); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to remove bundle rootfs: %w", err)
