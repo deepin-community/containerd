@@ -19,9 +19,9 @@ package plugin
 import (
 	"errors"
 
-	"github.com/containerd/containerd/platforms"
 	"github.com/containerd/containerd/plugin"
 	"github.com/containerd/containerd/snapshots/native"
+	"github.com/containerd/platforms"
 )
 
 // Config represents configuration for the native plugin.
@@ -48,6 +48,7 @@ func init() {
 				root = config.RootPath
 			}
 
+			ic.Meta.Exports[plugin.SnapshotterRootDir] = root
 			return native.NewSnapshotter(root)
 		},
 	})

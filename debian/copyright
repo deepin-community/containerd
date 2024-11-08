@@ -1,138 +1,93 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Source: https://github.com/docker/containerd
+# Excluded the whole vendor tree, except contaienrd/imgcrypt
 Files-Excluded:
-  vendor/github.com/AdaLogics/go-fuzz-headers
-  vendor/github.com/Microsoft/go-winio
-  vendor/github.com/Microsoft/hcsshim
-  vendor/github.com/beorn7/perks
-  vendor/github.com/blang/semver
-  vendor/github.com/cenkalti
-  vendor/github.com/cespare/xxhash
-  vendor/github.com/cilium/ebpf
-  vendor/github.com/containerd/aufs~~
-  vendor/github.com/containerd/btrfs
-  vendor/github.com/containerd/cgroups
-  vendor/github.com/containerd/console
-  vendor/github.com/containerd/continuity
-  vendor/github.com/containerd/fifo
-  vendor/github.com/containerd/go-cni
-  vendor/github.com/containerd/go-runc
-  vendor/github.com/containerd/imgcrypt~~
-  vendor/github.com/containerd/nri~~
-  vendor/github.com/containerd/ttrpc
-  vendor/github.com/containerd/typeurl
-  vendor/github.com/containerd/zfs~~
-  vendor/github.com/containernetworking/cni
-  vendor/github.com/containernetworking/plugins
-  vendor/github.com/containers/ocicrypt
-  vendor/github.com/coreos/go-systemd
-  vendor/github.com/cpuguy83/go-md2man
-  vendor/github.com/davecgh/go-spew
-  vendor/github.com/docker/go-events
-  vendor/github.com/docker/go-metrics
-  vendor/github.com/docker/go-units
-  vendor/github.com/emicklei/go-restful
-  vendor/github.com/fsnotify/fsnotify
-  vendor/github.com/go-logr/logr
-  vendor/github.com/go-logr/stdr
-  vendor/github.com/godbus/dbus
-  vendor/github.com/gogo/googleapis
-  vendor/github.com/gogo/protobuf
-  vendor/github.com/golang/groupcache
-  vendor/github.com/golang/protobuf
-  vendor/github.com/google/go-cmp
-  vendor/github.com/google/gofuzz
-  vendor/github.com/google/uuid
-  vendor/github.com/grpc-ecosystem/go-grpc-middleware
-  vendor/github.com/grpc-ecosystem/go-grpc-prometheus
-  vendor/github.com/grpc-ecosystem/grpc-gateway
-  vendor/github.com/hashicorp/errwrap
-  vendor/github.com/hashicorp/go-multierror
-  vendor/github.com/imdario/mergo
-  vendor/github.com/intel/goresctrl
-  vendor/github.com/json-iterator/go
-  vendor/github.com/klauspost/compress
-  vendor/github.com/matttproud/golang_protobuf_extensions
-  vendor/github.com/miekg/pkcs11
-  vendor/github.com/mistifyio/go-zfs
-  vendor/github.com/moby/locker
-  vendor/github.com/moby/spdystream
-  vendor/github.com/moby/sys
-  vendor/github.com/modern-go/concurrent
-  vendor/github.com/modern-go/reflect2
-  vendor/github.com/opencontainers/go-digest
-  vendor/github.com/opencontainers/image-spec
-  vendor/github.com/opencontainers/runc
-  vendor/github.com/opencontainers/runtime-spec
-  vendor/github.com/opencontainers/selinux
-  vendor/github.com/pelletier/go-toml
-  vendor/github.com/pkg/errors
-  vendor/github.com/pmezard/go-difflib
-  vendor/github.com/prometheus/client_golang
-  vendor/github.com/prometheus/client_model
-  vendor/github.com/prometheus/common
-  vendor/github.com/prometheus/procfs
-  vendor/github.com/russross/blackfriday
-  vendor/github.com/shurcooL/sanitized_anchor_name
-  vendor/github.com/sirupsen/logrus
-  vendor/github.com/spf13/pflag
-  vendor/github.com/stefanberger/go-pkcs11uri
-  vendor/github.com/stretchr/testify
-  vendor/github.com/tchap/go-patricia
-  vendor/github.com/urfave/cli
-  vendor/github.com/vishvananda/netlink
-  vendor/github.com/vishvananda/netns
-  vendor/go.etcd.io/bbolt
-  vendor/go.mozilla.org/pkcs7
-  vendor/go.opencensus.io
-  vendor/go.opentelemetry.io
-  vendor/golang.org/x/crypto
-  vendor/golang.org/x/net
-  vendor/golang.org/x/oauth2
-  vendor/golang.org/x/sync
-  vendor/golang.org/x/sys
-  vendor/golang.org/x/term
-  vendor/golang.org/x/text
-  vendor/golang.org/x/time
-  vendor/golang.org/x/xerrors
-  vendor/google.golang.org/appengine
-  vendor/google.golang.org/genproto
-  vendor/google.golang.org/grpc
-  vendor/google.golang.org/protobuf
-  vendor/gopkg.in/inf.v0
-  vendor/gopkg.in/square/go-jose.v2
-  vendor/gopkg.in/yaml.v2
-  vendor/gopkg.in/yaml.v3
-  vendor/gotest.tools
-  vendor/k8s.io/apimachinery~~
-  vendor/k8s.io/apiserver~~
-  vendor/k8s.io/api~~
-  vendor/k8s.io/client-go~~
-  vendor/k8s.io/component-base~~
-  vendor/k8s.io/cri-api~~
-  vendor/k8s.io/klog
-  vendor/k8s.io/utils~~
-  vendor/modules.txt
-  vendor/sigs.k8s.io/structured-merge-diff
-  vendor/sigs.k8s.io/yaml
+ vendor/dario.cat
+ vendor/github.com/AdaLogics
+ vendor/github.com/AdamKorcz
+ vendor/github.com/Microsoft
+ vendor/github.com/beorn7
+ vendor/github.com/blang
+ vendor/github.com/cenkalti
+ vendor/github.com/cespare
+ vendor/github.com/cilium
+ vendor/github.com/containerd/aufs
+ vendor/github.com/containerd/btrfs
+ vendor/github.com/containerd/cgroups
+ vendor/github.com/containerd/console
+ vendor/github.com/containerd/containerd
+ vendor/github.com/containerd/continuity
+ vendor/github.com/containerd/errdefs
+ vendor/github.com/containerd/fifo
+ vendor/github.com/containerd/go-cni
+ vendor/github.com/containerd/go-runc
+ ~~vendor/github.com/containerd/imgcrypt
+ vendor/github.com/containerd/log
+ vendor/github.com/containerd/nri
+ vendor/github.com/containerd/platforms
+ vendor/github.com/containerd/ttrpc
+ vendor/github.com/containerd/typeurl
+ vendor/github.com/containerd/zfs
+ vendor/github.com/containernetworking
+ vendor/github.com/containers
+ vendor/github.com/coreos
+ vendor/github.com/cpuguy83
+ vendor/github.com/davecgh
+ vendor/github.com/distribution
+ vendor/github.com/docker
+ vendor/github.com/emicklei
+ vendor/github.com/felixge
+ vendor/github.com/fsnotify
+ vendor/github.com/go-jose
+ vendor/github.com/go-logr
+ vendor/github.com/godbus
+ vendor/github.com/gogo
+ vendor/github.com/golang
+ vendor/github.com/google
+ vendor/github.com/grpc-ecosystem
+ vendor/github.com/hashicorp
+ vendor/github.com/intel
+ vendor/github.com/json-iterator
+ vendor/github.com/klauspost
+ vendor/github.com/matttproud
+ vendor/github.com/miekg
+ vendor/github.com/minio
+ vendor/github.com/mistifyio
+ vendor/github.com/moby
+ vendor/github.com/modern-go
+ vendor/github.com/opencontainers
+ vendor/github.com/pelletier
+ vendor/github.com/pkg
+ vendor/github.com/pmezard
+ vendor/github.com/prometheus
+ vendor/github.com/russross
+ vendor/github.com/sirupsen
+ vendor/github.com/spf13
+ vendor/github.com/stefanberger
+ vendor/github.com/stretchr
+ vendor/github.com/syndtr
+ vendor/github.com/tchap
+ vendor/github.com/urfave
+ vendor/github.com/vishvananda
+ vendor/go.etcd.io
+ vendor/go.mozilla.org
+ vendor/go.opencensus.io
+ vendor/go.opentelemetry.io
+ vendor/golang.org
+ vendor/google.golang.org
+ vendor/gopkg.in
+ vendor/k8s.io
+ vendor/modules.txt
+ vendor/sigs.k8s.io
+ vendor/tags.cncf.io
+
 
 Files: *
 Copyright: 2013-2016 Docker, Inc.
            The containerd Authors.
 License: Apache-2.0
 
-Files: contrib/apparmor/template.go
-Copyright: The containerd Authors.
-           1999-2008 Novell Inc.
-           2009-2012 Canonical Ltd.
-License: Apache-2.0
-
-Files: filters/quote.go
-Copyright: The containerd Authors.
-           The Go Authors.
-License: Apache-2.0 and Go
-
-Files: protobuf/plugin/fieldpath.proto
+Files: api/types/fieldpath.*
 Copyright: 2013 The GoGo Authors.
 License: BSD-2-Clause
 
@@ -141,30 +96,18 @@ Files: docs/*
 Copyright: 2013-2016 Docker, Inc.
            The containerd Authors.
 License: CC-BY-SA-4.0
+Comment: See statement in the README
 
 Files: debian/*
 Copyright: 2016 Tianon Gravi <tianon@debian.org>
            2019 Shengjing Zhu <zhsj@debian.org>
 License: Apache-2.0
 
-Files: vendor/github.com/containerd/*
-Copyright: 2015-2019 The containerd Authors.
-License: Apache-2.0
-
 Files: pkg/cri/server/bandwidth/*
        pkg/cri/streaming/*
        integration/remote/*
-       integration/util/*
+       integration/cri-api/pkg/apis/*
 Copyright: 2017 The Kubernetes Authors.
-License: Apache-2.0
-
-Files: vendor/k8s.io/*
-Copyright: 2014-2019 The Kubernetes Authors.
-License: Apache-2.0
-
-Files: vendor/k8s.io/klog/v2/klog_file.go
-       vendor/k8s.io/klog/v2/klog.go
-Copyright: 2013 Google Inc.
 License: Apache-2.0
 
 License: Apache-2.0

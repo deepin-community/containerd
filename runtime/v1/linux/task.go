@@ -1,5 +1,4 @@
 //go:build linux
-// +build linux
 
 /*
    Copyright The containerd Authors.
@@ -23,21 +22,22 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 
-	"github.com/containerd/cgroups"
+	cgroups "github.com/containerd/cgroups/v3/cgroup1"
+	"github.com/containerd/log"
+	"github.com/containerd/ttrpc"
+
 	eventstypes "github.com/containerd/containerd/api/events"
-	"github.com/containerd/containerd/api/types/task"
 	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/events/exchange"
 	"github.com/containerd/containerd/identifiers"
-	"github.com/containerd/containerd/log"
+	"github.com/containerd/containerd/protobuf"
+	"github.com/containerd/containerd/protobuf/types"
 	"github.com/containerd/containerd/runtime"
 	"github.com/containerd/containerd/runtime/v1/shim/client"
 	"github.com/containerd/containerd/runtime/v1/shim/v1"
-	"github.com/containerd/ttrpc"
-	"github.com/containerd/typeurl"
-	"github.com/gogo/protobuf/types"
 )
 
 // Task on a linux based system
@@ -49,17 +49,17 @@ type Task struct {
 	namespace string
 	cg        cgroups.Cgroup
 	events    *exchange.Exchange
-	tasks     *runtime.TaskList
+	tasks     *runtime.NSMap[runtime.Task]
 	bundle    *bundle
 }
 
-func newTask(id, namespace string, pid int, shim *client.Client, events *exchange.Exchange, list *runtime.TaskList, bundle *bundle) (*Task, error) {
+func newTask(id, namespace string, pid int, shim *client.Client, events *exchange.Exchange, list *runtime.NSMap[runtime.Task], bundle *bundle) (*Task, error) {
 	var (
 		err error
 		cg  cgroups.Cgroup
 	)
 	if pid > 0 {
-		cg, err = cgroups.Load(cgroups.V1, cgroups.PidPath(pid))
+		cg, err = cgroups.Load(cgroups.PidPath(pid))
 		if err != nil && err != cgroups.ErrCgroupDeleted {
 			return nil, err
 		}
@@ -96,7 +96,14 @@ func (t *Task) Delete(ctx context.Context) (*runtime.Exit, error) {
 	rsp, shimErr := t.shim.Delete(ctx, empty)
 	if shimErr != nil {
 		shimErr = errdefs.FromGRPC(shimErr)
-		if !errdefs.IsNotFound(shimErr) {
+		if !errdefs.IsNotFound(shimErr) &&
+			// NOTE: The last Detete call has deleted the init process
+			// record in shim service. However, the last call took
+			// so long and then the client side canceled the call.
+			// After the client retries the Delete, the shim service
+			// doesn't find the init process and returns `container
+			// must be created`. We should tolerate this issue.
+			!(errdefs.IsFailedPrecondition(shimErr) && strings.Contains(shimErr.Error(), "container must be created")) {
 			return nil, shimErr
 		}
 	}
@@ -118,7 +125,7 @@ func (t *Task) Delete(ctx context.Context) (*runtime.Exit, error) {
 	})
 	return &runtime.Exit{
 		Status:    rsp.ExitStatus,
-		Timestamp: rsp.ExitedAt,
+		Timestamp: protobuf.FromTimestamp(rsp.ExitedAt),
 		Pid:       rsp.Pid,
 	}, nil
 }
@@ -136,7 +143,7 @@ func (t *Task) Start(ctx context.Context) error {
 	}
 	t.pid = int(r.Pid)
 	if !hasCgroup {
-		cg, err := cgroups.Load(cgroups.V1, cgroups.PidPath(t.pid))
+		cg, err := cgroups.Load(cgroups.PidPath(t.pid))
 		if err != nil && err != cgroups.ErrCgroupDeleted {
 			return err
 		}
@@ -166,28 +173,15 @@ func (t *Task) State(ctx context.Context) (runtime.State, error) {
 		}
 		return runtime.State{}, errdefs.ErrNotFound
 	}
-	var status runtime.Status
-	switch response.Status {
-	case task.StatusCreated:
-		status = runtime.CreatedStatus
-	case task.StatusRunning:
-		status = runtime.RunningStatus
-	case task.StatusStopped:
-		status = runtime.StoppedStatus
-	case task.StatusPaused:
-		status = runtime.PausedStatus
-	case task.StatusPausing:
-		status = runtime.PausingStatus
-	}
 	return runtime.State{
 		Pid:        response.Pid,
-		Status:     status,
+		Status:     statusFromProto(response.Status),
 		Stdin:      response.Stdin,
 		Stdout:     response.Stdout,
 		Stderr:     response.Stderr,
 		Terminal:   response.Terminal,
 		ExitStatus: response.ExitStatus,
-		ExitedAt:   response.ExitedAt,
+		ExitedAt:   protobuf.FromTimestamp(response.ExitedAt),
 	}, nil
 }
 
@@ -340,7 +334,7 @@ func (t *Task) Stats(ctx context.Context) (*types.Any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return typeurl.MarshalAny(stats)
+	return protobuf.MarshalAnyToProto(stats)
 }
 
 // Cgroup returns the underlying cgroup for a linux task
@@ -362,7 +356,7 @@ func (t *Task) Wait(ctx context.Context) (*runtime.Exit, error) {
 		return nil, err
 	}
 	return &runtime.Exit{
-		Timestamp: r.ExitedAt,
+		Timestamp: protobuf.FromTimestamp(r.ExitedAt),
 		Status:    r.ExitStatus,
 	}, nil
 }

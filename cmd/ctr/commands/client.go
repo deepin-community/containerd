@@ -18,9 +18,14 @@ package commands
 
 import (
 	gocontext "context"
+	"os"
+	"strconv"
 
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/namespaces"
+	"github.com/containerd/containerd/pkg/epoch"
+	ptypes "github.com/containerd/containerd/protobuf/types"
+	"github.com/containerd/log"
 	"github.com/urfave/cli"
 )
 
@@ -42,6 +47,12 @@ func AppContext(context *cli.Context) (gocontext.Context, gocontext.CancelFunc) 
 	} else {
 		ctx, cancel = gocontext.WithCancel(ctx)
 	}
+	if tm, err := epoch.SourceDateEpoch(); err != nil {
+		log.L.WithError(err).Warn("Failed to read SOURCE_DATE_EPOCH")
+	} else if tm != nil {
+		log.L.Debugf("Using SOURCE_DATE_EPOCH: %v", tm)
+		ctx = epoch.WithSourceDateEpoch(ctx, tm)
+	}
 	return ctx, cancel
 }
 
@@ -54,5 +65,22 @@ func NewClient(context *cli.Context, opts ...containerd.ClientOpt) (*containerd.
 		return nil, nil, nil, err
 	}
 	ctx, cancel := AppContext(context)
+	var suppressDeprecationWarnings bool
+	if s := os.Getenv("CONTAINERD_SUPPRESS_DEPRECATION_WARNINGS"); s != "" {
+		suppressDeprecationWarnings, err = strconv.ParseBool(s)
+		if err != nil {
+			log.L.WithError(err).Warn("Failed to parse CONTAINERD_SUPPRESS_DEPRECATION_WARNINGS=" + s)
+		}
+	}
+	if !suppressDeprecationWarnings {
+		resp, err := client.IntrospectionService().Server(ctx, &ptypes.Empty{})
+		if err != nil {
+			log.L.WithError(err).Warn("Failed to check deprecations")
+		} else {
+			for _, d := range resp.Deprecations {
+				log.L.Warn("DEPRECATION: " + d.Message)
+			}
+		}
+	}
 	return client, ctx, cancel, nil
 }

@@ -1,5 +1,4 @@
 //go:build linux || darwin || freebsd || solaris
-// +build linux darwin freebsd solaris
 
 /*
    Copyright The containerd Authors.
@@ -24,8 +23,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/services/server"
+	"github.com/containerd/log"
 	"golang.org/x/sys/unix"
 )
 
@@ -46,7 +45,7 @@ func handleSignals(ctx context.Context, signals chan os.Signal, serverC chan *se
 				server = s
 			case s := <-signals:
 
-				// Do not print message when deailing with SIGPIPE, which may cause
+				// Do not print message when dealing with SIGPIPE, which may cause
 				// nested signals and consume lots of cpu bandwidth.
 				if s == unix.SIGPIPE {
 					continue

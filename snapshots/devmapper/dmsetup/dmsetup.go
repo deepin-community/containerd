@@ -1,5 +1,4 @@
 //go:build linux
-// +build linux
 
 /*
    Copyright The containerd Authors.
@@ -26,11 +25,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 
 	blkdiscard "github.com/containerd/containerd/snapshots/devmapper/blkdiscard"
-	exec "golang.org/x/sys/execabs"
 	"golang.org/x/sys/unix"
 )
 

@@ -19,6 +19,7 @@ package testsuite
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -94,6 +95,9 @@ func checkRemoveDirectoryInLowerLayer(ctx context.Context, t *testing.T, sn snap
 // See https://github.com/docker/docker/issues/24913 overlay
 // see https://github.com/docker/docker/issues/28391 overlay2
 func checkChown(ctx context.Context, t *testing.T, sn snapshots.Snapshotter, work string) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Chown is not supported on Windows")
+	}
 	l1Init := fstest.Apply(
 		fstest.CreateDir("/opt", 0700),
 		fstest.CreateDir("/opt/a", 0700),
@@ -114,29 +118,48 @@ func checkChown(ctx context.Context, t *testing.T, sn snapshots.Snapshotter, wor
 
 // checkRename
 // https://github.com/docker/docker/issues/25409
-func checkRename(ctx context.Context, t *testing.T, sn snapshots.Snapshotter, work string) {
-	t.Skip("rename test still fails on some kernels with overlay")
-	l1Init := fstest.Apply(
-		fstest.CreateDir("/dir1", 0700),
-		fstest.CreateDir("/somefiles", 0700),
-		fstest.CreateFile("/somefiles/f1", []byte("was here first!"), 0644),
-		fstest.CreateFile("/somefiles/f2", []byte("nothing interesting"), 0644),
-	)
-	l2Init := fstest.Apply(
-		fstest.Rename("/dir1", "/dir2"),
-		fstest.CreateFile("/somefiles/f1-overwrite", []byte("new content 1"), 0644),
-		fstest.Rename("/somefiles/f1-overwrite", "/somefiles/f1"),
-		fstest.Rename("/somefiles/f2", "/somefiles/f3"),
-	)
+func checkRename(ss string) func(ctx context.Context, t *testing.T, sn snapshots.Snapshotter, work string) {
+	return func(ctx context.Context, t *testing.T, sn snapshots.Snapshotter, work string) {
+		l1Init := fstest.Apply(
+			fstest.CreateDir("/dir1", 0700),
+			fstest.CreateDir("/somefiles", 0700),
+			fstest.CreateFile("/somefiles/f1", []byte("was here first!"), 0644),
+			fstest.CreateFile("/somefiles/f2", []byte("nothing interesting"), 0644),
+		)
 
-	if err := checkSnapshots(ctx, sn, work, l1Init, l2Init); err != nil {
-		t.Fatalf("Check snapshots failed: %+v", err)
+		var applier []fstest.Applier
+		switch ss {
+		// With neither OVERLAY_FS_REDIRECT_DIR nor redirect_dir,
+		// renaming the directory on the lower directory doesn't work on overlayfs.
+		// https://github.com/torvalds/linux/blob/v5.18/Documentation/filesystems/overlayfs.rst#renaming-directories
+		//
+		// It doesn't work on fuse-overlayfs either.
+		// https://github.com/containerd/fuse-overlayfs-snapshotter/pull/53#issuecomment-1543442048
+		case "overlayfs", "fuse-overlayfs":
+			// NOP
+		default:
+			applier = append(applier, fstest.Rename("/dir1", "/dir2"))
+		}
+		applier = append(
+			applier,
+			fstest.CreateFile("/somefiles/f1-overwrite", []byte("new content 1"), 0644),
+			fstest.Rename("/somefiles/f1-overwrite", "/somefiles/f1"),
+			fstest.Rename("/somefiles/f2", "/somefiles/f3"),
+		)
+		l2Init := fstest.Apply(applier...)
+
+		if err := checkSnapshots(ctx, sn, work, l1Init, l2Init); err != nil {
+			t.Fatalf("Check snapshots failed: %+v", err)
+		}
 	}
 }
 
 // checkDirectoryPermissionOnCommit
 // https://github.com/docker/docker/issues/27298
 func checkDirectoryPermissionOnCommit(ctx context.Context, t *testing.T, sn snapshots.Snapshotter, work string) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Chown is not supported on WCOW")
+	}
 	l1Init := fstest.Apply(
 		fstest.CreateDir("/dir1", 0700),
 		fstest.CreateDir("/dir2", 0700),

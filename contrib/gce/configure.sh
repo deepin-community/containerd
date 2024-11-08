@@ -104,6 +104,17 @@ if [ -f "${CONTAINERD_HOME}/${CONTAINERD_ENV_METADATA}" ]; then
   source "${CONTAINERD_HOME}/${CONTAINERD_ENV_METADATA}"
 fi
 
+set +x
+# GCS_BUCKET_TOKEN_METADATA is the metadata key for the GCS bucket token
+GCS_BUCKET_TOKEN_METADATA="GCS_BUCKET_TOKEN"
+# GCS_BUCKET_TOKEN should have read access to the bucket from which
+# containerd artifacts need to be downloaded
+GCS_BUCKET_TOKEN=$(fetch_metadata "${GCS_BUCKET_TOKEN_METADATA}")
+if [[ -n "${GCS_BUCKET_TOKEN}" ]]; then
+  HEADERS=(-H "Authorization: Bearer ${GCS_BUCKET_TOKEN}")
+fi
+set -x
+
 # CONTAINERD_PKG_PREFIX is the prefix of the cri-containerd tarball name.
 # By default use the release tarball with cni built in.
 pkg_prefix=${CONTAINERD_PKG_PREFIX:-"cri-containerd-cni"}
@@ -126,8 +137,16 @@ else
 
   # TODO(random-liu): Put version into the metadata instead of
   # deciding it in cloud init. This may cause issue to reboot test.
-  version=$(curl -f --ipv4 --retry 6 --retry-delay 3 --silent --show-error \
-    https://storage.googleapis.com/${deploy_path}/latest)
+  if [ $(uname -m) == "aarch64" ]; then
+    version=$(curl -f --ipv4 --retry 6 --retry-delay 3 --silent --show-error \
+      -H "Accept: application/vnd.github.v3+json" \
+      "https://api.github.com/repos/containerd/containerd/releases/latest" \
+      | jq -r .tag_name \
+      | sed "s:v::g")
+  else
+    version=$(set +x; curl -X GET "${HEADERS[@]}" -f --ipv4 --retry 6 --retry-delay 3 --silent --show-error \
+      https://storage.googleapis.com/${deploy_path}/latest)
+  fi
 fi
 
 TARBALL_GCS_NAME="${pkg_prefix}-${version}.linux-amd64.tar.gz"
@@ -148,11 +167,17 @@ if [ -z "${version}" ]; then
     exit 1
   fi
 else
-  if is_preloaded "${TARBALL_GCS_NAME}" "${tar_sha1}"; then
+  if [ $(uname -m) == "aarch64" ]; then
+    curl -f --ipv4 -Lo "${TARBALL}" --connect-timeout 20 --max-time 300 --retry 6 --retry-delay 10 \
+	"https://github.com/containerd/containerd/releases/download/v${version}/cri-containerd-${version}-linux-arm64.tar.gz"
+    tar xvf "${TARBALL}"
+    rm -f "${TARBALL}"
+  elif is_preloaded "${TARBALL_GCS_NAME}" "${tar_sha1}"; then
     echo "${TARBALL_GCS_NAME} is preloaded"
   else
     # Download and untar the release tar ball.
-    curl -f --ipv4 -Lo "${TARBALL}" --connect-timeout 20 --max-time 300 --retry 6 --retry-delay 10 "${TARBALL_GCS_PATH}"
+    $(set +x; curl -X GET "${HEADERS[@]}" -f --ipv4 -Lo "${TARBALL}" --connect-timeout 20 --max-time 300 --retry 6 \
+      --retry-delay 10 "${TARBALL_GCS_PATH}")
     tar xvf "${TARBALL}"
     rm -f "${TARBALL}"
   fi
@@ -209,6 +234,15 @@ disabled_plugins = ["io.containerd.internal.v1.restart"]
   SystemdCgroup = ${systemdCgroup}
 EOF
 chmod 644 "${config_path}"
+
+cri_sandboxes="${CONTAINERD_ENABLE_CRI_SANDBOXES:-}"
+containerd_env_path="${CONTAINERD_ENV_PATH:-"/etc/containerd/env"}"
+touch "${containerd_env_path}"
+if [[ -n "${cri_sandboxes}" ]]; then
+  cat > ${containerd_env_path} <<EOF
+ENABLE_CRI_SANDBOXES="${cri_sandboxes}"
+EOF
+fi
 
 # containerd_extra_runtime_handler is the extra runtime handler to install.
 containerd_extra_runtime_handler=${CONTAINERD_EXTRA_RUNTIME_HANDLER:-""}

@@ -19,28 +19,22 @@ package cri
 import (
 	"flag"
 	"fmt"
+	"os"
 	"path/filepath"
 
-	"github.com/containerd/containerd"
-	"github.com/containerd/containerd/api/services/containers/v1"
-	"github.com/containerd/containerd/api/services/diff/v1"
-	"github.com/containerd/containerd/api/services/images/v1"
-	introspectionapi "github.com/containerd/containerd/api/services/introspection/v1"
-	"github.com/containerd/containerd/api/services/namespaces/v1"
-	"github.com/containerd/containerd/api/services/tasks/v1"
-	"github.com/containerd/containerd/content"
-	"github.com/containerd/containerd/leases"
-	"github.com/containerd/containerd/log"
-	"github.com/containerd/containerd/platforms"
-	"github.com/containerd/containerd/plugin"
-	"github.com/containerd/containerd/services"
-	"github.com/containerd/containerd/snapshots"
 	imagespec "github.com/opencontainers/image-spec/specs-go/v1"
 	"k8s.io/klog/v2"
 
+	"github.com/containerd/containerd"
 	criconfig "github.com/containerd/containerd/pkg/cri/config"
 	"github.com/containerd/containerd/pkg/cri/constants"
+	"github.com/containerd/containerd/pkg/cri/sbserver"
 	"github.com/containerd/containerd/pkg/cri/server"
+	nriservice "github.com/containerd/containerd/pkg/nri"
+	"github.com/containerd/containerd/plugin"
+	"github.com/containerd/containerd/services/warning"
+	"github.com/containerd/log"
+	"github.com/containerd/platforms"
 )
 
 // Register CRI service plugin
@@ -53,19 +47,31 @@ func init() {
 		Requires: []plugin.Type{
 			plugin.EventPlugin,
 			plugin.ServicePlugin,
+			plugin.NRIApiPlugin,
+			plugin.WarningPlugin,
+			plugin.SnapshotPlugin,
 		},
 		InitFn: initCRIService,
 	})
 }
 
 func initCRIService(ic *plugin.InitContext) (interface{}, error) {
-	ready := ic.RegisterReadiness()
 	ic.Meta.Platforms = []imagespec.Platform{platforms.DefaultSpec()}
 	ic.Meta.Exports = map[string]string{"CRIVersion": constants.CRIVersion, "CRIVersionAlpha": constants.CRIVersionAlpha}
 	ctx := ic.Context
 	pluginConfig := ic.Config.(*criconfig.PluginConfig)
-	if err := criconfig.ValidatePluginConfig(ctx, pluginConfig); err != nil {
+	ws, err := ic.Get(plugin.WarningPlugin)
+	if err != nil {
+		return nil, err
+	}
+	warn := ws.(warning.Service)
+
+	if warnings, err := criconfig.ValidatePluginConfig(ctx, pluginConfig); err != nil {
 		return nil, fmt.Errorf("invalid plugin config: %w", err)
+	} else if len(warnings) > 0 {
+		for _, w := range warnings {
+			warn.Emit(ctx, w)
+		}
 	}
 
 	c := criconfig.Config{
@@ -81,94 +87,39 @@ func initCRIService(ic *plugin.InitContext) (interface{}, error) {
 		return nil, fmt.Errorf("failed to set glog level: %w", err)
 	}
 
-	servicesOpts, err := getServicesOpts(ic)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get services: %w", err)
-	}
-
 	log.G(ctx).Info("Connect containerd service")
 	client, err := containerd.New(
 		"",
 		containerd.WithDefaultNamespace(constants.K8sContainerdNamespace),
 		containerd.WithDefaultPlatform(platforms.Default()),
-		containerd.WithServices(servicesOpts...),
+		containerd.WithInMemoryServices(ic),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create containerd client: %w", err)
 	}
 
-	s, err := server.NewCRIService(c, client)
+	var s server.CRIService
+	if os.Getenv("ENABLE_CRI_SANDBOXES") != "" {
+		log.G(ctx).Info("using experimental CRI Sandbox server - unset ENABLE_CRI_SANDBOXES to disable")
+		s, err = sbserver.NewCRIService(c, client, getNRIAPI(ic), warn)
+	} else {
+		log.G(ctx).Info("using legacy CRI server")
+		s, err = server.NewCRIService(c, client, getNRIAPI(ic), warn)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to create CRI service: %w", err)
 	}
 
+	// RegisterReadiness() must be called after NewCRIService(): https://github.com/containerd/containerd/issues/9163
+	ready := ic.RegisterReadiness()
 	go func() {
 		if err := s.Run(ready); err != nil {
 			log.G(ctx).WithError(err).Fatal("Failed to run CRI service")
 		}
 		// TODO(random-liu): Whether and how we can stop containerd.
 	}()
+
 	return s, nil
-}
-
-// getServicesOpts get service options from plugin context.
-func getServicesOpts(ic *plugin.InitContext) ([]containerd.ServicesOpt, error) {
-	plugins, err := ic.GetByType(plugin.ServicePlugin)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get service plugin: %w", err)
-	}
-
-	ep, err := ic.Get(plugin.EventPlugin)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get event plugin: %w", err)
-	}
-
-	opts := []containerd.ServicesOpt{
-		containerd.WithEventService(ep.(containerd.EventService)),
-	}
-	for s, fn := range map[string]func(interface{}) containerd.ServicesOpt{
-		services.ContentService: func(s interface{}) containerd.ServicesOpt {
-			return containerd.WithContentStore(s.(content.Store))
-		},
-		services.ImagesService: func(s interface{}) containerd.ServicesOpt {
-			return containerd.WithImageClient(s.(images.ImagesClient))
-		},
-		services.SnapshotsService: func(s interface{}) containerd.ServicesOpt {
-			return containerd.WithSnapshotters(s.(map[string]snapshots.Snapshotter))
-		},
-		services.ContainersService: func(s interface{}) containerd.ServicesOpt {
-			return containerd.WithContainerClient(s.(containers.ContainersClient))
-		},
-		services.TasksService: func(s interface{}) containerd.ServicesOpt {
-			return containerd.WithTaskClient(s.(tasks.TasksClient))
-		},
-		services.DiffService: func(s interface{}) containerd.ServicesOpt {
-			return containerd.WithDiffClient(s.(diff.DiffClient))
-		},
-		services.NamespacesService: func(s interface{}) containerd.ServicesOpt {
-			return containerd.WithNamespaceClient(s.(namespaces.NamespacesClient))
-		},
-		services.LeasesService: func(s interface{}) containerd.ServicesOpt {
-			return containerd.WithLeasesService(s.(leases.Manager))
-		},
-		services.IntrospectionService: func(s interface{}) containerd.ServicesOpt {
-			return containerd.WithIntrospectionClient(s.(introspectionapi.IntrospectionClient))
-		},
-	} {
-		p := plugins[s]
-		if p == nil {
-			return nil, fmt.Errorf("service %q not found", s)
-		}
-		i, err := p.Instance()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get instance of service %q: %w", s, err)
-		}
-		if i == nil {
-			return nil, fmt.Errorf("instance of service %q not found", s)
-		}
-		opts = append(opts, fn(i))
-	}
-	return opts, nil
 }
 
 // Set glog level.
@@ -190,4 +141,31 @@ func setGLogLevel() error {
 		// glog doesn't support other filters. Defaults to v=0.
 	}
 	return nil
+}
+
+// Get the NRI plugin, and set up our NRI API for it.
+func getNRIAPI(ic *plugin.InitContext) nriservice.API {
+	const (
+		pluginType = plugin.NRIApiPlugin
+		pluginName = "nri"
+	)
+
+	ctx := ic.Context
+
+	p, err := ic.GetByID(pluginType, pluginName)
+	if err != nil {
+		log.G(ctx).Info("NRI service not found, NRI support disabled")
+		return nil
+	}
+
+	api, ok := p.(nriservice.API)
+	if !ok {
+		log.G(ctx).Infof("NRI plugin (%s, %q) has incorrect type %T, NRI support disabled",
+			pluginType, pluginName, api)
+		return nil
+	}
+
+	log.G(ctx).Info("using experimental NRI integration - disable nri plugin to prevent this")
+
+	return api
 }

@@ -14,6 +14,10 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
+# USE_HYPERV configures containerd to spawn Hyper-V isolated containers
+# when running on Windows.
+USE_HYPERV=${USE_HYPERV:-0}
+
 IS_WINDOWS=0
 if [ -v "OS" ] && [ "${OS}" == "Windows_NT" ]; then
   IS_WINDOWS=1
@@ -35,11 +39,23 @@ CONTAINERD_RUNTIME=${CONTAINERD_RUNTIME:-""}
 if [ -z "${CONTAINERD_CONFIG_FILE}" ]; then
   config_file="${CONTAINERD_CONFIG_DIR}/containerd-config-cri.toml"
   truncate --size 0 "${config_file}"
-  echo "version=2" >> ${config_file}
+  # TODO(fuweid): if the config.Imports supports patch update, it will be easy
+  # to write the integration test case with different configuration, like:
+  #
+  # 1. write configuration into importable containerd config path.
+  # 2. restart containerd
+  # 3. verify the behaviour
+  # 4. delete the configuration
+  # 5. restart containerd
+  cat >>${config_file} <<EOF
+version=2
+
+[plugins."io.containerd.grpc.v1.cri"]
+  drain_exec_sync_io_timeout = "10s"
+EOF
 
   if command -v sestatus >/dev/null 2>&1; then
     cat >>${config_file} <<EOF
-[plugins."io.containerd.grpc.v1.cri"]
   enable_selinux = true
 EOF
   fi
@@ -47,6 +63,20 @@ EOF
     cat >>${config_file} <<EOF
 [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
 runtime_type = "${CONTAINERD_RUNTIME}"
+EOF
+  fi
+  if [ $IS_WINDOWS -eq 0 ]; then
+    NRI_CONFIG_DIR="${CONTAINERD_CONFIG_DIR}/nri"
+    cat >>${config_file} <<EOF
+[plugins."io.containerd.nri.v1.nri"]
+  disable = false
+  config_file = "${NRI_CONFIG_DIR}/nri.conf"
+  socket_path = "/var/run/nri-test.sock"
+  plugin_path = "/no/pre-launched/nri/plugins"
+EOF
+    mkdir -p "${NRI_CONFIG_DIR}"
+    cat >"${NRI_CONFIG_DIR}/nri.conf" <<EOF
+disableConnections: false
 EOF
   fi
   CONTAINERD_CONFIG_FILE="${config_file}"
@@ -102,6 +132,24 @@ EOF
     }
   ]
 }
+EOF
+fi
+
+if [ ${IS_WINDOWS} -eq 1 -a ${USE_HYPERV} -eq 1 ];then
+  cat >> ${CONTAINERD_CONFIG_FILE} << EOF
+version = 2
+[plugins]
+    [plugins."io.containerd.grpc.v1.cri".containerd]
+      default_runtime_name = "runhcs-wcow-hyperv"
+      [plugins."io.containerd.grpc.v1.cri".containerd.runtimes]
+
+       [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runhcs-wcow-hyperv]
+        runtime_type = "io.containerd.runhcs.v1"
+        [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runhcs-wcow-hyperv.options]
+          Debug = true
+          DebugType = 2
+          SandboxPlatform = "windows/amd64"
+          SandboxIsolation = 1
 EOF
 fi
 
@@ -165,8 +213,12 @@ run_containerd() {
     local report_dir=$1
   fi
   CMD=""
-  if [ ! -z "${sudo}" ]; then
+  if [ -n "${sudo}" ]; then
     CMD+="${sudo} "
+    # sudo strips environment variables, so add ENABLE_CRI_SANDBOXES back if present
+    if [ -n  "${ENABLE_CRI_SANDBOXES}" ]; then
+      CMD+="ENABLE_CRI_SANDBOXES='${ENABLE_CRI_SANDBOXES}' "
+    fi
   fi
   CMD+="${PWD}/bin/containerd"
 

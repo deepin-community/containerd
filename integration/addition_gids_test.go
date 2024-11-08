@@ -1,5 +1,4 @@
 //go:build linux
-// +build linux
 
 /*
    Copyright The containerd Authors.
@@ -26,13 +25,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/containerd/containerd/integration/images"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	runtime "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 
 func TestAdditionalGids(t *testing.T) {
-	testImage := GetImage(BusyBox)
+	testImage := images.Get(images.BusyBox)
 	EnsureImageExists(t, testImage)
 	type testCase struct {
 		description string

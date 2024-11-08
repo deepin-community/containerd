@@ -1,5 +1,4 @@
 //go:build linux
-// +build linux
 
 /*
    Copyright The containerd Authors.
@@ -26,17 +25,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/containerd/cgroups"
+	"github.com/containerd/cgroups/v3"
 	"github.com/containerd/containerd/metrics/cgroups/common"
 	v1 "github.com/containerd/containerd/metrics/cgroups/v1"
 	v2 "github.com/containerd/containerd/metrics/cgroups/v2"
 	v1types "github.com/containerd/containerd/metrics/types/v1"
 	v2types "github.com/containerd/containerd/metrics/types/v2"
-	"github.com/containerd/typeurl"
+	"github.com/containerd/containerd/protobuf"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/containerd/containerd/protobuf/types"
 	metrics "github.com/docker/go-metrics"
-	"github.com/gogo/protobuf/types"
 )
 
 // TestRegressionIssue6772 should not have dead-lock when Collect and Add run
@@ -152,7 +151,7 @@ func (t *mockStatT) Namespace() string {
 
 func (t *mockStatT) Stats(context.Context) (*types.Any, error) {
 	if t.isV1 {
-		return typeurl.MarshalAny(&v1types.Metrics{})
+		return protobuf.MarshalAnyToProto(&v1types.Metrics{})
 	}
-	return typeurl.MarshalAny(&v2types.Metrics{})
+	return protobuf.MarshalAnyToProto(&v2types.Metrics{})
 }

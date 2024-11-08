@@ -1,0 +1,66 @@
+From: Debian Go Packaging Team <team+pkg-go@tracker.debian.org>
+Date: Sun, 30 Jun 2024 06:48:42 -0400
+Subject: Allow running tests with unshare(1)
+
+Last-Updated: 2024-06-11
+Bug-Debian: https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=1070411
+Forwarded: https://github.com/containerd/containerd/pull/10323
+---
+ pkg/cri/sbserver/podsandbox/sandbox_run_linux_test.go | 5 ++++-
+ pkg/cri/server/sandbox_run_linux_test.go              | 6 +++++-
+ 2 files changed, 9 insertions(+), 2 deletions(-)
+
+diff --git a/pkg/cri/sbserver/podsandbox/sandbox_run_linux_test.go b/pkg/cri/sbserver/podsandbox/sandbox_run_linux_test.go
+index 3a33cfe..9f19e66 100644
+--- a/pkg/cri/sbserver/podsandbox/sandbox_run_linux_test.go
++++ b/pkg/cri/sbserver/podsandbox/sandbox_run_linux_test.go
+@@ -33,6 +33,7 @@ import (
+ 	"github.com/containerd/containerd/pkg/cri/annotations"
+ 	"github.com/containerd/containerd/pkg/cri/opts"
+ 	ostesting "github.com/containerd/containerd/pkg/os/testing"
++	"github.com/containerd/containerd/pkg/userns"
+ )
+ 
+ func getRunPodSandboxTestData() (*runtime.PodSandboxConfig, *imagespec.ImageConfig, func(*testing.T, string, *runtimespec.Spec)) {
+@@ -129,7 +130,9 @@ func TestLinuxSandboxContainerSpec(t *testing.T) {
+ 					Type: runtimespec.IPCNamespace,
+ 				})
+ 				assert.Contains(t, spec.Linux.Sysctl["net.ipv4.ip_unprivileged_port_start"], "0")
+-				assert.Contains(t, spec.Linux.Sysctl["net.ipv4.ping_group_range"], "0 2147483647")
++				if !userns.RunningInUserNS() {
++					assert.Contains(t, spec.Linux.Sysctl["net.ipv4.ping_group_range"], "0 2147483647")
++				}
+ 			},
+ 		},
+ 		"host namespace": {
+diff --git a/pkg/cri/server/sandbox_run_linux_test.go b/pkg/cri/server/sandbox_run_linux_test.go
+index 244c029..82afdcb 100644
+--- a/pkg/cri/server/sandbox_run_linux_test.go
++++ b/pkg/cri/server/sandbox_run_linux_test.go
+@@ -33,6 +33,7 @@ import (
+ 	"github.com/containerd/containerd/pkg/cri/annotations"
+ 	"github.com/containerd/containerd/pkg/cri/opts"
+ 	ostesting "github.com/containerd/containerd/pkg/os/testing"
++	"github.com/containerd/containerd/pkg/userns"
+ )
+ 
+ func getRunPodSandboxTestData() (*runtime.PodSandboxConfig, *imagespec.ImageConfig, func(*testing.T, string, *runtimespec.Spec)) {
+@@ -119,6 +120,7 @@ func TestLinuxSandboxContainerSpec(t *testing.T) {
+ 
+ 	for desc, test := range map[string]struct {
+ 		configChange func(*runtime.PodSandboxConfig)
++
+ 		specCheck    func(*testing.T, *runtimespec.Spec)
+ 		expectErr    bool
+ 	}{
+@@ -140,7 +142,9 @@ func TestLinuxSandboxContainerSpec(t *testing.T) {
+ 					Type: runtimespec.IPCNamespace,
+ 				})
+ 				assert.Contains(t, spec.Linux.Sysctl["net.ipv4.ip_unprivileged_port_start"], "0")
+-				assert.Contains(t, spec.Linux.Sysctl["net.ipv4.ping_group_range"], "0 2147483647")
++				if !userns.RunningInUserNS() {
++				    assert.Contains(t, spec.Linux.Sysctl["net.ipv4.ping_group_range"], "0 2147483647")
++				}
+ 				assert.NotContains(t, spec.Linux.Namespaces, runtimespec.LinuxNamespace{
+ 					Type: runtimespec.UserNamespace,
+ 				})

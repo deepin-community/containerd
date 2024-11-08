@@ -23,14 +23,14 @@ import (
 	"github.com/containerd/containerd/cmd/ctr/commands"
 	"github.com/containerd/containerd/images/converter"
 	"github.com/containerd/containerd/images/converter/uncompress"
-	"github.com/containerd/containerd/platforms"
+	"github.com/containerd/platforms"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/urfave/cli"
 )
 
 var convertCommand = cli.Command{
 	Name:      "convert",
-	Usage:     "convert an image",
+	Usage:     "Convert an image",
 	ArgsUsage: "[flags] <source_ref> <target_ref>",
 	Description: `Convert an image format.
 
@@ -43,11 +43,11 @@ When '--all-platforms' is given all images in a manifest list must be available.
 		// generic flags
 		cli.BoolFlag{
 			Name:  "uncompress",
-			Usage: "convert tar.gz layers to uncompressed tar layers",
+			Usage: "Convert tar.gz layers to uncompressed tar layers",
 		},
 		cli.BoolFlag{
 			Name:  "oci",
-			Usage: "convert Docker media types to OCI media types",
+			Usage: "Convert Docker media types to OCI media types",
 		},
 		// platform flags
 		cli.StringSliceFlag{
@@ -57,7 +57,7 @@ When '--all-platforms' is given all images in a manifest list must be available.
 		},
 		cli.BoolFlag{
 			Name:  "all-platforms",
-			Usage: "exports content from all platforms",
+			Usage: "Exports content from all platforms",
 		},
 	},
 	Action: func(context *cli.Context) error {

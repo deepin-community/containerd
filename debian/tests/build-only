@@ -1,7 +1,13 @@
 #!/bin/sh
 
+# The point of this test is to verify that the sources installed into the
+# golang-github-containerd-containerd-dev can be compiled using just
+# the dependencies specified in that binary package.
+# In contrast to the 'dh-golang-autopkgtest', this is intended to catch
+# missing dependencies that are listed in the Build-Depends only
+
 set -ex
 
-mkdir -p _build
-cp -a /usr/share/gocode/src _build/
-dh_auto_build --buildsystem=golang --builddirectory=_build
+mkdir -p _clean_build
+cp -a /usr/share/gocode/src _clean_build/
+dh_auto_build --buildsystem=golang --builddirectory=_clean_build

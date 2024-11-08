@@ -18,20 +18,20 @@ package image
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sync"
 
-	"github.com/containerd/containerd"
-	"github.com/containerd/containerd/content"
-	"github.com/containerd/containerd/errdefs"
-	"github.com/containerd/containerd/pkg/cri/labels"
-	"github.com/containerd/containerd/pkg/cri/util"
-
+	docker "github.com/distribution/reference"
 	imagedigest "github.com/opencontainers/go-digest"
 	"github.com/opencontainers/go-digest/digestset"
 	imageidentity "github.com/opencontainers/image-spec/identity"
 	imagespec "github.com/opencontainers/image-spec/specs-go/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
+
+	"github.com/containerd/containerd"
+	"github.com/containerd/containerd/errdefs"
+	"github.com/containerd/containerd/pkg/cri/labels"
+	"github.com/containerd/containerd/pkg/cri/util"
 )
 
 // Image contains all resources associated with the image. All fields
@@ -68,8 +68,9 @@ func NewStore(client *containerd.Client) *Store {
 		refCache: make(map[string]string),
 		client:   client,
 		store: &store{
-			images:    make(map[string]Image),
-			digestSet: digestset.NewSet(),
+			images:     make(map[string]Image),
+			digestSet:  digestset.NewSet(),
+			pinnedRefs: make(map[string]sets.Set[string]),
 		},
 	}
 }
@@ -107,7 +108,13 @@ func (s *Store) update(ref string, img *Image) error {
 	}
 	if oldExist {
 		if oldID == img.ID {
-			return nil
+			if s.store.isPinned(img.ID, ref) == img.Pinned {
+				return nil
+			}
+			if img.Pinned {
+				return s.store.pin(img.ID, ref)
+			}
+			return s.store.unpin(img.ID, ref)
 		}
 		// Updated. Remove tag from old image.
 		s.store.delete(oldID, ref)
@@ -137,13 +144,9 @@ func getImage(ctx context.Context, i containerd.Image) (*Image, error) {
 	}
 	id := desc.Digest.String()
 
-	rb, err := content.ReadBlob(ctx, i.ContentStore(), desc)
+	spec, err := i.Spec(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("read image config from content store: %w", err)
-	}
-	var ociimage imagespec.Image
-	if err := json.Unmarshal(rb, &ociimage); err != nil {
-		return nil, fmt.Errorf("unmarshal image config %s: %w", rb, err)
+		return nil, fmt.Errorf("failed to get OCI image spec: %w", err)
 	}
 
 	pinned := i.Labels()[labels.PinnedImageLabelKey] == labels.PinnedImageLabelValue
@@ -153,7 +156,7 @@ func getImage(ctx context.Context, i containerd.Image) (*Image, error) {
 		References: []string{i.Name()},
 		ChainID:    chainID.String(),
 		Size:       size,
-		ImageSpec:  ociimage,
+		ImageSpec:  spec,
 		Pinned:     pinned,
 	}, nil
 
@@ -172,7 +175,7 @@ func (s *Store) Resolve(ref string) (string, error) {
 
 // Get gets image metadata by image id. The id can be truncated.
 // Returns various validation errors if the image id is invalid.
-// Returns storeutil.ErrNotExist if the image doesn't exist.
+// Returns errdefs.ErrNotFound if the image doesn't exist.
 func (s *Store) Get(id string) (Image, error) {
 	return s.store.get(id)
 }
@@ -183,9 +186,10 @@ func (s *Store) List() []Image {
 }
 
 type store struct {
-	lock      sync.RWMutex
-	images    map[string]Image
-	digestSet *digestset.Set
+	lock       sync.RWMutex
+	images     map[string]Image
+	digestSet  *digestset.Set
+	pinnedRefs map[string]sets.Set[string]
 }
 
 func (s *store) list() []Image {
@@ -210,6 +214,14 @@ func (s *store) add(img Image) error {
 		}
 	}
 
+	if img.Pinned {
+		if refs := s.pinnedRefs[img.ID]; refs == nil {
+			s.pinnedRefs[img.ID] = sets.New(img.References...)
+		} else {
+			refs.Insert(img.References...)
+		}
+	}
+
 	i, ok := s.images[img.ID]
 	if !ok {
 		// If the image doesn't exist, add it.
@@ -217,8 +229,76 @@ func (s *store) add(img Image) error {
 		return nil
 	}
 	// Or else, merge and sort the references.
-	i.References = sortReferences(util.MergeStringSlices(i.References, img.References))
+	i.References = docker.Sort(util.MergeStringSlices(i.References, img.References))
+	i.Pinned = i.Pinned || img.Pinned
 	s.images[img.ID] = i
+	return nil
+}
+
+func (s *store) isPinned(id, ref string) bool {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+	digest, err := s.digestSet.Lookup(id)
+	if err != nil {
+		return false
+	}
+	refs := s.pinnedRefs[digest.String()]
+	return refs != nil && refs.Has(ref)
+}
+
+func (s *store) pin(id, ref string) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	digest, err := s.digestSet.Lookup(id)
+	if err != nil {
+		if err == digestset.ErrDigestNotFound {
+			err = errdefs.ErrNotFound
+		}
+		return err
+	}
+	i, ok := s.images[digest.String()]
+	if !ok {
+		return errdefs.ErrNotFound
+	}
+
+	if refs := s.pinnedRefs[digest.String()]; refs == nil {
+		s.pinnedRefs[digest.String()] = sets.New(ref)
+	} else {
+		refs.Insert(ref)
+	}
+	i.Pinned = true
+	s.images[digest.String()] = i
+	return nil
+}
+
+func (s *store) unpin(id, ref string) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	digest, err := s.digestSet.Lookup(id)
+	if err != nil {
+		if err == digestset.ErrDigestNotFound {
+			err = errdefs.ErrNotFound
+		}
+		return err
+	}
+	i, ok := s.images[digest.String()]
+	if !ok {
+		return errdefs.ErrNotFound
+	}
+
+	refs := s.pinnedRefs[digest.String()]
+	if refs == nil {
+		return nil
+	}
+	if refs.Delete(ref); len(refs) > 0 {
+		return nil
+	}
+
+	// delete unpinned image, we only need to keep the pinned
+	// entries in the map
+	delete(s.pinnedRefs, digest.String())
+	i.Pinned = false
+	s.images[digest.String()] = i
 	return nil
 }
 
@@ -253,10 +333,20 @@ func (s *store) delete(id, ref string) {
 	}
 	i.References = util.SubtractStringSlice(i.References, ref)
 	if len(i.References) != 0 {
+		if refs := s.pinnedRefs[digest.String()]; refs != nil {
+			if refs.Delete(ref); len(refs) == 0 {
+				i.Pinned = false
+				// delete unpinned image, we only need to keep the pinned
+				// entries in the map
+				delete(s.pinnedRefs, digest.String())
+			}
+		}
+
 		s.images[digest.String()] = i
 		return
 	}
 	// Remove the image if it is not referenced any more.
 	s.digestSet.Remove(digest)
 	delete(s.images, digest.String())
+	delete(s.pinnedRefs, digest.String())
 }

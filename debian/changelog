@@ -1,8 +1,143 @@
-containerd (1.6.24~ds1-1deepin1) unstable; urgency=medium
+containerd (1.7.23~ds2-1) unstable; urgency=medium
 
-  * Skip TestSetPositiveOomScoreAdjustment.
+  * Vendor in containerd/imgcrypt to avoid circular dependency
 
- -- LiChengGang <lichenggang@uniontech.com>  Sun, 07 Apr 2024 14:42:58 +0800
+ -- Reinhard Tartler <siretart@tauware.de>  Sat, 02 Nov 2024 06:11:58 -0400
+
+containerd (1.7.23~ds1-3) unstable; urgency=medium
+
+  * Revert tightening on golang-github-prometheus-client-golang-dev
+
+ -- Reinhard Tartler <siretart@tauware.de>  Fri, 01 Nov 2024 06:55:21 -0400
+
+containerd (1.7.23~ds1-2) unstable; urgency=medium
+
+  * Tighten dependency on prometheus (>= 2.45.6+ds-6)
+  * Upload to unstable
+
+ -- Reinhard Tartler <siretart@tauware.de>  Thu, 31 Oct 2024 06:33:17 -0400
+
+containerd (1.7.23~ds1-1) experimental; urgency=medium
+
+  * New upstream version: 1.7.23
+  * Bump dependency on containerd/errdefs (>= 0.3.0)
+  * Build against opentelemetry libraries in experimental
+  * containerd.service: add systemd dependency on dbus, Closes: #1083290
+
+ -- Reinhard Tartler <siretart@tauware.de>  Mon, 28 Oct 2024 19:01:13 -0400
+
+containerd (1.7.22~ds1-1) unstable; urgency=medium
+
+  * New upstream version: 1.7.22
+
+ -- Reinhard Tartler <siretart@tauware.de>  Sat, 28 Sep 2024 11:39:55 -0400
+
+containerd (1.7.21~ds2-1) experimental; urgency=medium
+
+  * New upstrem version: 1.7.21
+  * refresh patches
+  * Tighten dependency on golang-github-moby-sys
+  * Drop unneeded grpc patch
+
+ -- Reinhard Tartler <siretart@tauware.de>  Wed, 04 Sep 2024 09:53:53 -0400
+
+containerd (1.7.20~ds2-2) unstable; urgency=medium
+
+  * Upload to unstable.
+
+ -- Reinhard Tartler <siretart@tauware.de>  Mon, 02 Sep 2024 07:37:02 -0400
+
+containerd (1.7.20~ds2-1) experimental; urgency=medium
+
+  [ Shengjing Zhu ]
+  * New upstream version: 1.7.20
+  * Update Files-Excluded/Included in copyright
+  * Update Build-Depends
+
+  [ Reinhard Tartler ]
+  * Repack upstream tarball
+  * Unvendor all k8s libraries. This avoids a conflict with types from the
+    golang-github-kubernetes-cri-api-dev package.
+
+ -- Reinhard Tartler <siretart@tauware.de>  Sun, 01 Sep 2024 09:15:29 -0400
+
+containerd (1.7.18~ds2-1) unstable; urgency=medium
+
+  * Repack the source with only circular dependency and k8s library in vendor
+  * Add patch to fix build with Go1.23
+
+ -- Shengjing Zhu <zhsj@debian.org>  Thu, 08 Aug 2024 18:27:06 +0800
+
+containerd (1.7.18~ds1-6) unstable; urgency=medium
+
+  * debian/tests/build-only: Clarify and build in separate directory
+  * containerd/zfs: Adjust import path for debian
+  * add missing dependencies to the -dev package
+  * Ensure most pkg/cri don't end up in the binary package
+  * Add Breaks:
+    - golang-github-containerd-imgcrypt-dev (<< 1.1.11-4)
+    - golang-github-docker-docker-dev (<< 26.1)
+
+ -- Reinhard Tartler <siretart@tauware.de>  Sun, 04 Aug 2024 11:09:55 -0400
+
+containerd (1.7.18~ds1-5) unstable; urgency=medium
+
+  * install aufs, zfs as if it came from this package to work around cyclic dependencies
+    (Closes: #1077319)
+  * remove the 'build-only' autopkgtest
+
+ -- Reinhard Tartler <siretart@tauware.de>  Sat, 03 Aug 2024 10:22:27 -0400
+
+containerd (1.7.18~ds1-4) unstable; urgency=medium
+
+  * Team upload
+  * Upload changes from experimental to unstable
+
+ -- Mathias Gibbens <gibmat@debian.org>  Fri, 26 Jul 2024 02:50:31 +0000
+
+containerd (1.7.18~ds1-3) experimental; urgency=medium
+
+  * Depend on golang-opentelemetry-contrib-dev to fix FTBFS in dependent
+    packages
+
+ -- Reinhard Tartler <siretart@tauware.de>  Tue, 09 Jul 2024 19:19:57 -0400
+
+containerd (1.7.18~ds1-2) experimental; urgency=medium
+
+  * Add forgotten bug closure in previous upload
+  * 0011-allow-test-run-in-userns.patch: expand to another unit test
+
+ -- Reinhard Tartler <siretart@tauware.de>  Sun, 30 Jun 2024 20:00:55 -0400
+
+containerd (1.7.18~ds1-1) experimental; urgency=medium
+
+  * New upstream release, Closes: #1073550
+    - Update / tighten dependencies, drop previously vendored libraries:
+      - containerd/errdefs
+      - containerd/imgcrypt
+      - containerd/log
+      - containerd/nri
+      - k8s.io/cri-api
+  * Avoid building contrib/fuzzer
+  * Allow building against go-runc 1.1.0
+
+ -- Reinhard Tartler <siretart@tauware.de>  Sun, 30 Jun 2024 15:25:00 -0400
+
+containerd (1.6.24~ds1-3) experimental; urgency=medium
+
+  * Build against ttrpc in experimental
+
+ -- Reinhard Tartler <siretart@tauware.de>  Tue, 11 Jun 2024 08:25:41 -0400
+
+containerd (1.6.24~ds1-2) unstable; urgency=medium
+
+  * Refresh patches
+  * Fix FTBFS when running test if running with unshare, Closes: #1070411
+  * Remove leftover manpages in clean, Closes: #1044768
+  * Rebuild to move systemd units into /usr, Closes: #1072079
+  * Add myself as uploader.
+
+ -- Reinhard Tartler <siretart@tauware.de>  Tue, 11 Jun 2024 06:08:53 -0400
 
 containerd (1.6.24~ds1-1) unstable; urgency=medium
 

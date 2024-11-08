@@ -40,7 +40,7 @@ import (
 
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
-	"gotest.tools/v3/assert"
+	"github.com/stretchr/testify/assert"
 )
 
 type memoryLabelStore struct {
@@ -292,20 +292,6 @@ func populateBlobStore(ctx context.Context, t checker, cs content.Store, nblobs,
 	return blobs
 }
 
-func contentStoreEnv(t testing.TB) (context.Context, string, content.Store, func()) {
-	tmpdir := t.TempDir()
-
-	cs, err := NewStore(tmpdir)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	return ctx, tmpdir, cs, func() {
-		cancel()
-	}
-}
-
 func checkCopy(t checker, size int64, dst io.Writer, src io.Reader) {
 	nn, err := io.Copy(dst, src)
 	if err != nil {
@@ -323,7 +309,7 @@ func checkBlobPath(t *testing.T, cs content.Store, dgst digest.Digest) string {
 		t.Fatalf("failed to calculate blob path: %v", err)
 	}
 
-	if path != filepath.Join(cs.(*store).root, "blobs", dgst.Algorithm().String(), dgst.Hex()) {
+	if path != filepath.Join(cs.(*store).root, "blobs", dgst.Algorithm().String(), dgst.Encoded()) {
 		t.Fatalf("unexpected path: %q", path)
 	}
 	fi, err := os.Stat(path)
@@ -352,7 +338,7 @@ func checkWrite(ctx context.Context, t checker, cs content.Store, dgst digest.Di
 
 func TestWriterTruncateRecoversFromIncompleteWrite(t *testing.T) {
 	cs, err := NewStore(t.TempDir())
-	assert.NilError(t, err)
+	assert.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -363,26 +349,26 @@ func TestWriterTruncateRecoversFromIncompleteWrite(t *testing.T) {
 	setupIncompleteWrite(ctx, t, cs, ref, total)
 
 	writer, err := cs.Writer(ctx, content.WithRef(ref), content.WithDescriptor(ocispec.Descriptor{Size: total}))
-	assert.NilError(t, err)
+	assert.NoError(t, err)
 
-	assert.NilError(t, writer.Truncate(0))
+	assert.Nil(t, writer.Truncate(0))
 
 	_, err = writer.Write(contentB)
-	assert.NilError(t, err)
+	assert.NoError(t, err)
 
 	dgst := digest.FromBytes(contentB)
 	err = writer.Commit(ctx, total, dgst)
-	assert.NilError(t, err)
+	assert.NoError(t, err)
 }
 
 func setupIncompleteWrite(ctx context.Context, t *testing.T, cs content.Store, ref string, total int64) {
 	writer, err := cs.Writer(ctx, content.WithRef(ref), content.WithDescriptor(ocispec.Descriptor{Size: total}))
-	assert.NilError(t, err)
+	assert.NoError(t, err)
 
 	_, err = writer.Write([]byte("bad data"))
-	assert.NilError(t, err)
+	assert.NoError(t, err)
 
-	assert.NilError(t, writer.Close())
+	assert.Nil(t, writer.Close())
 }
 
 func TestWriteReadEmptyFileTimestamp(t *testing.T) {

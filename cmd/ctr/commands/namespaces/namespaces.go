@@ -24,17 +24,18 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/containerd/log"
+	"github.com/urfave/cli"
+
 	"github.com/containerd/containerd/cmd/ctr/commands"
 	"github.com/containerd/containerd/errdefs"
-	"github.com/containerd/containerd/log"
-	"github.com/urfave/cli"
 )
 
 // Command is the cli command for managing namespaces
 var Command = cli.Command{
 	Name:    "namespaces",
 	Aliases: []string{"namespace", "ns"},
-	Usage:   "manage namespaces",
+	Usage:   "Manage namespaces",
 	Subcommands: cli.Commands{
 		createCommand,
 		listCommand,
@@ -46,7 +47,7 @@ var Command = cli.Command{
 var createCommand = cli.Command{
 	Name:        "create",
 	Aliases:     []string{"c"},
-	Usage:       "create a new namespace",
+	Usage:       "Create a new namespace",
 	ArgsUsage:   "<name> [<key>=<value>]",
 	Description: "create a new namespace. it must be unique",
 	Action: func(context *cli.Context) error {
@@ -66,7 +67,7 @@ var createCommand = cli.Command{
 
 var setLabelsCommand = cli.Command{
 	Name:        "label",
-	Usage:       "set and clear labels for a namespace",
+	Usage:       "Set and clear labels for a namespace",
 	ArgsUsage:   "<name> [<key>=<value>, ...]",
 	Description: "set and clear labels for a namespace. empty value clears the label",
 	Action: func(context *cli.Context) error {
@@ -92,13 +93,13 @@ var setLabelsCommand = cli.Command{
 var listCommand = cli.Command{
 	Name:        "list",
 	Aliases:     []string{"ls"},
-	Usage:       "list namespaces",
+	Usage:       "List namespaces",
 	ArgsUsage:   "[flags]",
 	Description: "list namespaces",
 	Flags: []cli.Flag{
 		cli.BoolFlag{
 			Name:  "quiet, q",
-			Usage: "print only the namespace name",
+			Usage: "Print only the namespace name",
 		},
 	},
 	Action: func(context *cli.Context) error {
@@ -144,13 +145,13 @@ var listCommand = cli.Command{
 var removeCommand = cli.Command{
 	Name:        "remove",
 	Aliases:     []string{"rm"},
-	Usage:       "remove one or more namespaces",
+	Usage:       "Remove one or more namespaces",
 	ArgsUsage:   "<name> [<name>, ...]",
 	Description: "remove one or more namespaces. for now, the namespace must be empty",
 	Flags: []cli.Flag{
 		cli.BoolFlag{
 			Name:  "cgroup,c",
-			Usage: "delete the namespace's cgroup",
+			Usage: "Delete the namespace's cgroup",
 		},
 	},
 	Action: func(context *cli.Context) error {

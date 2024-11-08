@@ -1,5 +1,4 @@
 //go:build linux && !no_btrfs && cgo
-// +build linux,!no_btrfs,cgo
 
 /*
    Copyright The containerd Authors.
@@ -24,9 +23,9 @@ import (
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
-	"github.com/containerd/containerd/platforms"
 	"github.com/containerd/containerd/plugin"
 	"github.com/containerd/containerd/snapshots/btrfs"
+	"github.com/containerd/platforms"
 )
 
 // Config represents configuration for the btrfs plugin.
@@ -53,7 +52,7 @@ func init() {
 				root = config.RootPath
 			}
 
-			ic.Meta.Exports = map[string]string{"root": root}
+			ic.Meta.Exports[plugin.SnapshotterRootDir] = root
 			return btrfs.NewSnapshotter(root)
 		},
 	})

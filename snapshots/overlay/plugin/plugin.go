@@ -1,5 +1,4 @@
 //go:build linux
-// +build linux
 
 /*
    Copyright The containerd Authors.
@@ -22,9 +21,9 @@ package overlay
 import (
 	"errors"
 
-	"github.com/containerd/containerd/platforms"
 	"github.com/containerd/containerd/plugin"
 	"github.com/containerd/containerd/snapshots/overlay"
+	"github.com/containerd/platforms"
 )
 
 // Config represents configuration for the overlay plugin.
@@ -68,7 +67,7 @@ func init() {
 				oOpts = append(oOpts, overlay.WithMountOptions(config.MountOptions))
 			}
 
-			ic.Meta.Exports["root"] = root
+			ic.Meta.Exports[plugin.SnapshotterRootDir] = root
 			return overlay.NewSnapshotter(root, oOpts...)
 		},
 	})

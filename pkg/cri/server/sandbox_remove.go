@@ -17,15 +17,16 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"time"
 
+	"github.com/containerd/log"
+
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/errdefs"
-	"github.com/containerd/containerd/log"
 
 	"github.com/sirupsen/logrus"
-	"golang.org/x/net/context"
 	runtime "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 
@@ -101,6 +102,11 @@ func (c *criService) RemovePodSandbox(ctx context.Context, r *runtime.RemovePodS
 		log.G(ctx).Tracef("Remove called for sandbox container %q that does not exist", id)
 	}
 
+	err = c.nri.RemovePodSandbox(ctx, &sandbox)
+	if err != nil {
+		log.G(ctx).WithError(err).Errorf("NRI pod removal notification failed")
+	}
+
 	// Remove sandbox from sandbox store. Note that once the sandbox is successfully
 	// deleted:
 	// 1) ListPodSandbox will not include this sandbox.
@@ -110,6 +116,9 @@ func (c *criService) RemovePodSandbox(ctx context.Context, r *runtime.RemovePodS
 
 	// Release the sandbox name reserved for the sandbox.
 	c.sandboxNameIndex.ReleaseByKey(id)
+
+	// Send CONTAINER_DELETED event with both ContainerId and SandboxId equal to SandboxId.
+	c.generateAndSendContainerEvent(ctx, id, id, runtime.ContainerEventType_CONTAINER_DELETED_EVENT)
 
 	sandboxRemoveTimer.WithValues(sandbox.RuntimeHandler).UpdateSince(start)
 

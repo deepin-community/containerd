@@ -23,20 +23,21 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"testing"
 	"time"
 
+	"github.com/containerd/continuity/fs/fstest"
+	"github.com/containerd/log/logtest"
+	"github.com/stretchr/testify/assert"
+
 	"github.com/containerd/containerd/errdefs"
-	"github.com/containerd/containerd/log/logtest"
 	"github.com/containerd/containerd/mount"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/containerd/containerd/pkg/randutil"
 	"github.com/containerd/containerd/pkg/testutil"
 	"github.com/containerd/containerd/snapshots"
-	"github.com/containerd/continuity/fs/fstest"
-	"gotest.tools/v3/assert"
-	is "gotest.tools/v3/assert/cmp"
 )
 
 // SnapshotterFunc is used in SnapshotterSuite
@@ -63,7 +64,6 @@ func SnapshotterSuite(t *testing.T, name string, snapshotterFn SnapshotterFunc) 
 	t.Run("RemoveIntermediateSnapshot", makeTest(name, snapshotterFn, checkRemoveIntermediateSnapshot))
 	t.Run("DeletedFilesInChildSnapshot", makeTest(name, snapshotterFn, checkDeletedFilesInChildSnapshot))
 	t.Run("MoveFileFromLowerLayer", makeTest(name, snapshotterFn, checkFileFromLowerLayer))
-	t.Run("Rename", makeTest(name, snapshotterFn, checkRename))
 
 	t.Run("ViewReadonly", makeTest(name, snapshotterFn, checkSnapshotterViewReadonly))
 
@@ -71,10 +71,16 @@ func SnapshotterSuite(t *testing.T, name string, snapshotterFn SnapshotterFunc) 
 	t.Run("CloseTwice", makeTest(name, snapshotterFn, closeTwice))
 	t.Run("RootPermission", makeTest(name, snapshotterFn, checkRootPermission))
 
+	// Different snapshotters behave slightly differently in the tests below.
+	t.Run("Rename", makeTest(name, snapshotterFn, checkRename(name)))
 	t.Run("128LayersMount", makeTest(name, snapshotterFn, check128LayersMount(name)))
 }
 
-func makeTest(name string, snapshotterFn func(ctx context.Context, root string) (snapshots.Snapshotter, func() error, error), fn func(ctx context.Context, t *testing.T, snapshotter snapshots.Snapshotter, work string)) func(t *testing.T) {
+func makeTest(
+	snapshotter string,
+	snapshotterFn func(ctx context.Context, root string) (snapshots.Snapshotter, func() error, error),
+	fn func(ctx context.Context, t *testing.T, snapshotter snapshots.Snapshotter, work string),
+) func(t *testing.T) {
 	return func(t *testing.T) {
 		t.Parallel()
 
@@ -86,7 +92,7 @@ func makeTest(name string, snapshotterFn func(ctx context.Context, root string) 
 		// 		work/ -> passed to test functions
 		// 		root/ -> passed to snapshotter
 		//
-		tmpDir, err := os.MkdirTemp("", "snapshot-suite-"+name+"-")
+		tmpDir, err := os.MkdirTemp("", "snapshot-suite-"+snapshotter+"-")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -158,6 +164,7 @@ func checkSnapshotterBasic(ctx context.Context, t *testing.T, snapshotter snapsh
 	}
 
 	if err := initialApplier.Apply(preparing); err != nil {
+		testutil.Unmount(t, preparing)
 		t.Fatalf("failure reason: %+v", err)
 	}
 	// unmount before commit
@@ -173,8 +180,8 @@ func checkSnapshotterBasic(ctx context.Context, t *testing.T, snapshotter snapsh
 		t.Fatalf("failure reason: %+v", err)
 	}
 
-	assert.Check(t, is.Equal("", si.Parent))
-	assert.Check(t, is.Equal(snapshots.KindCommitted, si.Kind))
+	assert.Empty(t, si.Parent)
+	assert.Equal(t, snapshots.KindCommitted, si.Kind)
 
 	_, err = snapshotter.Stat(ctx, preparing)
 	if err == nil {
@@ -195,10 +202,12 @@ func checkSnapshotterBasic(ctx context.Context, t *testing.T, snapshotter snapsh
 	}
 
 	if err := fstest.CheckDirectoryEqualWithApplier(next, initialApplier); err != nil {
+		testutil.Unmount(t, next)
 		t.Fatalf("failure reason: %+v", err)
 	}
 
 	if err := diffApplier.Apply(next); err != nil {
+		testutil.Unmount(t, next)
 		t.Fatalf("failure reason: %+v", err)
 	}
 	// unmount before commit
@@ -209,8 +218,8 @@ func checkSnapshotterBasic(ctx context.Context, t *testing.T, snapshotter snapsh
 		t.Fatal(err)
 	}
 
-	assert.Check(t, is.Equal(committed, ni.Parent))
-	assert.Check(t, is.Equal(snapshots.KindActive, ni.Kind))
+	assert.Equal(t, committed, ni.Parent)
+	assert.Equal(t, snapshots.KindActive, ni.Kind)
 
 	nextCommitted := filepath.Join(work, "committed-next")
 	if err := snapshotter.Commit(ctx, nextCommitted, next, opt); err != nil {
@@ -222,8 +231,8 @@ func checkSnapshotterBasic(ctx context.Context, t *testing.T, snapshotter snapsh
 		t.Fatalf("failure reason: %+v", err)
 	}
 
-	assert.Check(t, is.Equal(committed, si2.Parent))
-	assert.Check(t, is.Equal(snapshots.KindCommitted, si2.Kind))
+	assert.Equal(t, committed, si2.Parent)
+	assert.Equal(t, snapshots.KindCommitted, si2.Kind)
 
 	_, err = snapshotter.Stat(ctx, next)
 	if err == nil {
@@ -235,7 +244,7 @@ func checkSnapshotterBasic(ctx context.Context, t *testing.T, snapshotter snapsh
 		si2.Name: si2,
 	}
 	walked := map[string]snapshots.Info{} // walk is not ordered
-	assert.NilError(t, snapshotter.Walk(ctx, func(ctx context.Context, si snapshots.Info) error {
+	assert.Nil(t, snapshotter.Walk(ctx, func(ctx context.Context, si snapshots.Info) error {
 		walked[si.Name] = si
 		return nil
 	}))
@@ -246,7 +255,7 @@ func checkSnapshotterBasic(ctx context.Context, t *testing.T, snapshotter snapsh
 			t.Errorf("Missing stat for %v", ek)
 			continue
 		}
-		assert.Check(t, is.DeepEqual(ev, av))
+		assert.Equal(t, ev, av)
 	}
 
 	nextnext := filepath.Join(work, "nextnextlayer")
@@ -269,10 +278,16 @@ func checkSnapshotterBasic(ctx context.Context, t *testing.T, snapshotter snapsh
 	}
 
 	testutil.Unmount(t, nextnext)
-	assert.NilError(t, snapshotter.Remove(ctx, nextnext))
-	assert.Assert(t, is.ErrorContains(snapshotter.Remove(ctx, committed), "remove"))
-	assert.NilError(t, snapshotter.Remove(ctx, nextCommitted))
-	assert.NilError(t, snapshotter.Remove(ctx, committed))
+	assert.Nil(t, snapshotter.Remove(ctx, nextnext))
+
+	err = snapshotter.Remove(ctx, committed)
+	assert.NotNil(t, err)
+	if err != nil {
+		assert.Contains(t, err.Error(), "remove")
+	}
+
+	assert.Nil(t, snapshotter.Remove(ctx, nextCommitted))
+	assert.Nil(t, snapshotter.Remove(ctx, committed))
 }
 
 // Create a New Layer on top of base layer with Prepare, Stat on new layer, should return Active layer.
@@ -304,9 +319,9 @@ func checkSnapshotterStatActive(ctx context.Context, t *testing.T, snapshotter s
 	if err != nil {
 		t.Fatal(err)
 	}
-	assert.Check(t, is.Equal(si.Name, preparing))
-	assert.Check(t, is.Equal(snapshots.KindActive, si.Kind))
-	assert.Check(t, is.Equal("", si.Parent))
+	assert.Equal(t, si.Name, preparing)
+	assert.Equal(t, snapshots.KindActive, si.Kind)
+	assert.Equal(t, "", si.Parent)
 }
 
 // Commit a New Layer on top of base layer with Prepare & Commit , Stat on new layer, should return Committed layer.
@@ -343,9 +358,9 @@ func checkSnapshotterStatCommitted(ctx context.Context, t *testing.T, snapshotte
 	if err != nil {
 		t.Fatal(err)
 	}
-	assert.Check(t, is.Equal(si.Name, committed))
-	assert.Check(t, is.Equal(snapshots.KindCommitted, si.Kind))
-	assert.Check(t, is.Equal("", si.Parent))
+	assert.Equal(t, si.Name, committed)
+	assert.Equal(t, snapshots.KindCommitted, si.Kind)
+	assert.Equal(t, "", si.Parent)
 
 }
 
@@ -376,11 +391,12 @@ func checkSnapshotterTransitivity(ctx context.Context, t *testing.T, snapshotter
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer testutil.Unmount(t, preparing)
 
 	if err = os.WriteFile(filepath.Join(preparing, "foo"), []byte("foo\n"), 0777); err != nil {
+		testutil.Unmount(t, preparing)
 		t.Fatal(err)
 	}
+	testutil.Unmount(t, preparing)
 
 	snapA := filepath.Join(work, "snapA")
 	if err = snapshotter.Commit(ctx, snapA, preparing, opt); err != nil {
@@ -391,11 +407,12 @@ func checkSnapshotterTransitivity(ctx context.Context, t *testing.T, snapshotter
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer testutil.Unmount(t, next)
 
 	if err = os.WriteFile(filepath.Join(next, "foo"), []byte("foo bar\n"), 0777); err != nil {
+		testutil.Unmount(t, next)
 		t.Fatal(err)
 	}
+	testutil.Unmount(t, next)
 
 	snapB := filepath.Join(work, "snapB")
 	if err = snapshotter.Commit(ctx, snapB, next, opt); err != nil {
@@ -418,9 +435,9 @@ func checkSnapshotterTransitivity(ctx context.Context, t *testing.T, snapshotter
 	}
 
 	// Test the transivity
-	assert.Check(t, is.Equal("", siA.Parent))
-	assert.Check(t, is.Equal(snapA, siB.Parent))
-	assert.Check(t, is.Equal("", siParentB.Parent))
+	assert.Equal(t, "", siA.Parent)
+	assert.Equal(t, snapA, siB.Parent)
+	assert.Equal(t, "", siParentB.Parent)
 
 }
 
@@ -430,7 +447,7 @@ func checkSnapshotterPrepareView(ctx context.Context, t *testing.T, snapshotter 
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer testutil.Unmount(t, preparing)
+	testutil.Unmount(t, preparing)
 
 	snapA := filepath.Join(work, "snapA")
 	if err = snapshotter.Commit(ctx, snapA, preparing, opt); err != nil {
@@ -450,7 +467,7 @@ func checkSnapshotterPrepareView(ctx context.Context, t *testing.T, snapshotter 
 	}
 
 	_, err = snapshotter.View(ctx, newLayer, snapA, opt)
-	assert.Check(t, err != nil)
+	assert.True(t, err != nil)
 
 	// Two Prepare with same key
 	prepLayer := filepath.Join(work, "prepLayer")
@@ -464,7 +481,7 @@ func checkSnapshotterPrepareView(ctx context.Context, t *testing.T, snapshotter 
 	}
 
 	_, err = snapshotter.Prepare(ctx, prepLayer, snapA, opt)
-	assert.Check(t, err != nil)
+	assert.True(t, err != nil)
 
 	// Two View with same key
 	viewLayer := filepath.Join(work, "viewLayer")
@@ -478,7 +495,7 @@ func checkSnapshotterPrepareView(ctx context.Context, t *testing.T, snapshotter 
 	}
 
 	_, err = snapshotter.View(ctx, viewLayer, snapA, opt)
-	assert.Check(t, err != nil)
+	assert.True(t, err != nil)
 
 }
 
@@ -507,6 +524,7 @@ func checkRemoveIntermediateSnapshot(ctx context.Context, t *testing.T, snapshot
 	if err != nil {
 		t.Fatal(err)
 	}
+	testutil.Unmount(t, base)
 
 	committedBase := filepath.Join(work, "committed-base")
 	if err = snapshotter.Commit(ctx, committedBase, base, opt); err != nil {
@@ -545,7 +563,6 @@ func checkRemoveIntermediateSnapshot(ctx context.Context, t *testing.T, snapshot
 	if err != nil {
 		t.Fatal(err)
 	}
-	testutil.Unmount(t, base)
 	err = snapshotter.Remove(ctx, committedBase)
 	if err != nil {
 		t.Fatal(err)
@@ -804,14 +821,15 @@ func checkSnapshotterViewReadonly(ctx context.Context, t *testing.T, snapshotter
 	}
 
 	testfile := filepath.Join(viewMountPoint, "testfile")
-	if err := os.WriteFile(testfile, []byte("testcontent"), 0777); err != nil {
+	err = os.WriteFile(testfile, []byte("testcontent"), 0777)
+	testutil.Unmount(t, viewMountPoint)
+	if err != nil {
 		t.Logf("write to %q failed with %v (EROFS is expected but can be other error code)", testfile, err)
 	} else {
 		t.Fatalf("write to %q should fail (EROFS) but did not fail", testfile)
 	}
-	testutil.Unmount(t, viewMountPoint)
-	assert.NilError(t, snapshotter.Remove(ctx, view))
-	assert.NilError(t, snapshotter.Remove(ctx, committed))
+	assert.Nil(t, snapshotter.Remove(ctx, view))
+	assert.Nil(t, snapshotter.Remove(ctx, committed))
 }
 
 // Move files from base layer to new location in intermediate layer.
@@ -859,6 +877,10 @@ func closeTwice(ctx context.Context, t *testing.T, snapshotter snapshots.Snapsho
 }
 
 func checkRootPermission(ctx context.Context, t *testing.T, snapshotter snapshots.Snapshotter, work string) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Filesystem permissions are not supported on Windows")
+	}
+
 	preparing, err := snapshotterPrepareMount(ctx, snapshotter, "preparing", "", work)
 	if err != nil {
 		t.Fatal(err)
@@ -881,19 +903,19 @@ func check128LayersMount(name string) func(ctx context.Context, t *testing.T, sn
 		lowestApply := fstest.Apply(
 			fstest.CreateFile("/bottom", []byte("way at the bottom\n"), 0777),
 			fstest.CreateFile("/overwriteme", []byte("FIRST!\n"), 0777),
-			fstest.CreateDir("/ADDHERE", 0755),
-			fstest.CreateDir("/ONLYME", 0755),
-			fstest.CreateFile("/ONLYME/bottom", []byte("bye!\n"), 0777),
+			fstest.CreateDir("/addhere", 0755),
+			fstest.CreateDir("/onlyme", 0755),
+			fstest.CreateFile("/onlyme/bottom", []byte("bye!\n"), 0777),
 		)
 
 		appliers := []fstest.Applier{lowestApply}
 		for i := 1; i <= 127; i++ {
 			appliers = append(appliers, fstest.Apply(
 				fstest.CreateFile("/overwriteme", []byte(fmt.Sprintf("%d WAS HERE!\n", i)), 0777),
-				fstest.CreateFile(fmt.Sprintf("/ADDHERE/file-%d", i), []byte("same\n"), 0755),
-				fstest.RemoveAll("/ONLYME"),
-				fstest.CreateDir("/ONLYME", 0755),
-				fstest.CreateFile(fmt.Sprintf("/ONLYME/file-%d", i), []byte("only me!\n"), 0777),
+				fstest.CreateFile(fmt.Sprintf("/addhere/file-%d", i), []byte("same\n"), 0755),
+				fstest.RemoveAll("/onlyme"),
+				fstest.CreateDir("/onlyme", 0755),
+				fstest.CreateFile(fmt.Sprintf("/onlyme/file-%d", i), []byte("only me!\n"), 0777),
 			))
 		}
 
@@ -919,7 +941,9 @@ func check128LayersMount(name string) func(ctx context.Context, t *testing.T, sn
 				t.Fatalf("[layer %d] failed to mount on the target(%s): %+v", i, preparing, err)
 			}
 
-			if err := fstest.CheckDirectoryEqual(preparing, flat); err != nil {
+			t.Log("mount", preparing)
+
+			if err := fstest.CheckDirectoryEqual(flat, preparing); err != nil {
 				testutil.Unmount(t, preparing)
 				t.Fatalf("[layer %d] preparing doesn't equal to flat before apply: %+v", i, err)
 			}
@@ -934,7 +958,7 @@ func check128LayersMount(name string) func(ctx context.Context, t *testing.T, sn
 				t.Fatalf("[layer %d] failed to apply on preparing dir: %+v", i, err)
 			}
 
-			if err := fstest.CheckDirectoryEqual(preparing, flat); err != nil {
+			if err := fstest.CheckDirectoryEqual(flat, preparing); err != nil {
 				testutil.Unmount(t, preparing)
 				t.Fatalf("[layer %d] preparing doesn't equal to flat after apply: %+v", i, err)
 			}
@@ -963,7 +987,7 @@ func check128LayersMount(name string) func(ctx context.Context, t *testing.T, sn
 		}
 		defer testutil.Unmount(t, view)
 
-		if err := fstest.CheckDirectoryEqual(view, flat); err != nil {
+		if err := fstest.CheckDirectoryEqual(flat, view); err != nil {
 			t.Fatalf("fullview should equal to flat: %+v", err)
 		}
 	}

@@ -2,6 +2,10 @@
 
 set -ex
 
+# this test is overwriting the /usr/lib/cni/cni-bridge-fp binary
+# work around "Text file busy" error
+systemctl stop containerd
+
 dh_auto_configure -O--buildsystem=golang -O--builddirectory=_build
 
 # overlayfs not work in lxc
@@ -11,6 +15,7 @@ DH_GOPKG=github.com/containerd/containerd/integration/failpoint/cmd \
   dh_auto_build -O--buildsystem=golang -O--builddirectory=_build
 
 cp -v _build/bin/containerd-shim-runc-fp-v1 /usr/local/bin/
+cp -v _build/bin/runc-fp /usr/local/bin
 cp -v _build/bin/cni-bridge-fp /usr/lib/cni
 
 mkdir -p /etc/cni/net.d /etc/cni-fp/net.d
@@ -106,9 +111,9 @@ version = 2
     path = "/var/lib/containerd/opt"
 EOF
 
-systemctl status containerd
-systemctl restart containerd
-systemctl status containerd
+systemctl status containerd || true
+systemctl start  containerd || true
+systemctl status containerd || true
 
 DH_GOLANG_BUILDPKG=github.com/containerd/containerd/integration \
   dh_auto_test -O--buildsystem=golang -O--builddirectory=_build --no-parallel

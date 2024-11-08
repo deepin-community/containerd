@@ -1,0 +1,1511 @@
+From: Reinhard Tartler <siretart@tauware.de>
+Date: Sat, 28 Sep 2024 11:20:55 -0400
+Subject: Add missing sources for containerd/{zfs,aufs}
+
+Forwarded: not-needed
+---
+ vendor/github.com/containerd/aufs/.golangci.yml    |  22 ++
+ vendor/github.com/containerd/aufs/LICENSE          | 201 ++++++++++
+ vendor/github.com/containerd/aufs/README.md        |  34 ++
+ vendor/github.com/containerd/aufs/aufs.go          | 438 +++++++++++++++++++++
+ vendor/github.com/containerd/aufs/plugin/plugin.go |  60 +++
+ vendor/github.com/containerd/zfs/LICENSE           | 202 ++++++++++
+ vendor/github.com/containerd/zfs/README.md         |  35 ++
+ vendor/github.com/containerd/zfs/codecov.yml       |   1 +
+ vendor/github.com/containerd/zfs/plugin/plugin.go  |  62 +++
+ vendor/github.com/containerd/zfs/zfs.go            | 368 +++++++++++++++++
+ 10 files changed, 1423 insertions(+)
+ create mode 100644 vendor/github.com/containerd/aufs/.golangci.yml
+ create mode 100644 vendor/github.com/containerd/aufs/LICENSE
+ create mode 100644 vendor/github.com/containerd/aufs/README.md
+ create mode 100644 vendor/github.com/containerd/aufs/aufs.go
+ create mode 100644 vendor/github.com/containerd/aufs/plugin/plugin.go
+ create mode 100644 vendor/github.com/containerd/zfs/LICENSE
+ create mode 100644 vendor/github.com/containerd/zfs/README.md
+ create mode 100644 vendor/github.com/containerd/zfs/codecov.yml
+ create mode 100644 vendor/github.com/containerd/zfs/plugin/plugin.go
+ create mode 100644 vendor/github.com/containerd/zfs/zfs.go
+
+diff --git a/vendor/github.com/containerd/aufs/.golangci.yml b/vendor/github.com/containerd/aufs/.golangci.yml
+new file mode 100644
+index 0000000..4cef1ca
+--- /dev/null
++++ b/vendor/github.com/containerd/aufs/.golangci.yml
+@@ -0,0 +1,22 @@
++linters:
++  enable:
++    - structcheck
++    - varcheck
++    - staticcheck
++    - unconvert
++    - gofmt
++    - goimports
++    - golint
++    - ineffassign
++    - vet
++    - unused
++    - misspell
++  disable:
++    - errcheck
++
++issues:
++  include:
++    - EXC0002
++
++run:
++  timeout: 2m
+diff --git a/vendor/github.com/containerd/aufs/LICENSE b/vendor/github.com/containerd/aufs/LICENSE
+new file mode 100644
+index 0000000..261eeb9
+--- /dev/null
++++ b/vendor/github.com/containerd/aufs/LICENSE
+@@ -0,0 +1,201 @@
++                                 Apache License
++                           Version 2.0, January 2004
++                        http://www.apache.org/licenses/
++
++   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
++
++   1. Definitions.
++
++      "License" shall mean the terms and conditions for use, reproduction,
++      and distribution as defined by Sections 1 through 9 of this document.
++
++      "Licensor" shall mean the copyright owner or entity authorized by
++      the copyright owner that is granting the License.
++
++      "Legal Entity" shall mean the union of the acting entity and all
++      other entities that control, are controlled by, or are under common
++      control with that entity. For the purposes of this definition,
++      "control" means (i) the power, direct or indirect, to cause the
++      direction or management of such entity, whether by contract or
++      otherwise, or (ii) ownership of fifty percent (50%) or more of the
++      outstanding shares, or (iii) beneficial ownership of such entity.
++
++      "You" (or "Your") shall mean an individual or Legal Entity
++      exercising permissions granted by this License.
++
++      "Source" form shall mean the preferred form for making modifications,
++      including but not limited to software source code, documentation
++      source, and configuration files.
++
++      "Object" form shall mean any form resulting from mechanical
++      transformation or translation of a Source form, including but
++      not limited to compiled object code, generated documentation,
++      and conversions to other media types.
++
++      "Work" shall mean the work of authorship, whether in Source or
++      Object form, made available under the License, as indicated by a
++      copyright notice that is included in or attached to the work
++      (an example is provided in the Appendix below).
++
++      "Derivative Works" shall mean any work, whether in Source or Object
++      form, that is based on (or derived from) the Work and for which the
++      editorial revisions, annotations, elaborations, or other modifications
++      represent, as a whole, an original work of authorship. For the purposes
++      of this License, Derivative Works shall not include works that remain
++      separable from, or merely link (or bind by name) to the interfaces of,
++      the Work and Derivative Works thereof.
++
++      "Contribution" shall mean any work of authorship, including
++      the original version of the Work and any modifications or additions
++      to that Work or Derivative Works thereof, that is intentionally
++      submitted to Licensor for inclusion in the Work by the copyright owner
++      or by an individual or Legal Entity authorized to submit on behalf of
++      the copyright owner. For the purposes of this definition, "submitted"
++      means any form of electronic, verbal, or written communication sent
++      to the Licensor or its representatives, including but not limited to
++      communication on electronic mailing lists, source code control systems,
++      and issue tracking systems that are managed by, or on behalf of, the
++      Licensor for the purpose of discussing and improving the Work, but
++      excluding communication that is conspicuously marked or otherwise
++      designated in writing by the copyright owner as "Not a Contribution."
++
++      "Contributor" shall mean Licensor and any individual or Legal Entity
++      on behalf of whom a Contribution has been received by Licensor and
++      subsequently incorporated within the Work.
++
++   2. Grant of Copyright License. Subject to the terms and conditions of
++      this License, each Contributor hereby grants to You a perpetual,
++      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
++      copyright license to reproduce, prepare Derivative Works of,
++      publicly display, publicly perform, sublicense, and distribute the
++      Work and such Derivative Works in Source or Object form.
++
++   3. Grant of Patent License. Subject to the terms and conditions of
++      this License, each Contributor hereby grants to You a perpetual,
++      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
++      (except as stated in this section) patent license to make, have made,
++      use, offer to sell, sell, import, and otherwise transfer the Work,
++      where such license applies only to those patent claims licensable
++      by such Contributor that are necessarily infringed by their
++      Contribution(s) alone or by combination of their Contribution(s)
++      with the Work to which such Contribution(s) was submitted. If You
++      institute patent litigation against any entity (including a
++      cross-claim or counterclaim in a lawsuit) alleging that the Work
++      or a Contribution incorporated within the Work constitutes direct
++      or contributory patent infringement, then any patent licenses
++      granted to You under this License for that Work shall terminate
++      as of the date such litigation is filed.
++
++   4. Redistribution. You may reproduce and distribute copies of the
++      Work or Derivative Works thereof in any medium, with or without
++      modifications, and in Source or Object form, provided that You
++      meet the following conditions:
++
++      (a) You must give any other recipients of the Work or
++          Derivative Works a copy of this License; and
++
++      (b) You must cause any modified files to carry prominent notices
++          stating that You changed the files; and
++
++      (c) You must retain, in the Source form of any Derivative Works
++          that You distribute, all copyright, patent, trademark, and
++          attribution notices from the Source form of the Work,
++          excluding those notices that do not pertain to any part of
++          the Derivative Works; and
++
++      (d) If the Work includes a "NOTICE" text file as part of its
++          distribution, then any Derivative Works that You distribute must
++          include a readable copy of the attribution notices contained
++          within such NOTICE file, excluding those notices that do not
++          pertain to any part of the Derivative Works, in at least one
++          of the following places: within a NOTICE text file distributed
++          as part of the Derivative Works; within the Source form or
++          documentation, if provided along with the Derivative Works; or,
++          within a display generated by the Derivative Works, if and
++          wherever such third-party notices normally appear. The contents
++          of the NOTICE file are for informational purposes only and
++          do not modify the License. You may add Your own attribution
++          notices within Derivative Works that You distribute, alongside
++          or as an addendum to the NOTICE text from the Work, provided
++          that such additional attribution notices cannot be construed
++          as modifying the License.
++
++      You may add Your own copyright statement to Your modifications and
++      may provide additional or different license terms and conditions
++      for use, reproduction, or distribution of Your modifications, or
++      for any such Derivative Works as a whole, provided Your use,
++      reproduction, and distribution of the Work otherwise complies with
++      the conditions stated in this License.
++
++   5. Submission of Contributions. Unless You explicitly state otherwise,
++      any Contribution intentionally submitted for inclusion in the Work
++      by You to the Licensor shall be under the terms and conditions of
++      this License, without any additional terms or conditions.
++      Notwithstanding the above, nothing herein shall supersede or modify
++      the terms of any separate license agreement you may have executed
++      with Licensor regarding such Contributions.
++
++   6. Trademarks. This License does not grant permission to use the trade
++      names, trademarks, service marks, or product names of the Licensor,
++      except as required for reasonable and customary use in describing the
++      origin of the Work and reproducing the content of the NOTICE file.
++
++   7. Disclaimer of Warranty. Unless required by applicable law or
++      agreed to in writing, Licensor provides the Work (and each
++      Contributor provides its Contributions) on an "AS IS" BASIS,
++      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
++      implied, including, without limitation, any warranties or conditions
++      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
++      PARTICULAR PURPOSE. You are solely responsible for determining the
++      appropriateness of using or redistributing the Work and assume any
++      risks associated with Your exercise of permissions under this License.
++
++   8. Limitation of Liability. In no event and under no legal theory,
++      whether in tort (including negligence), contract, or otherwise,
++      unless required by applicable law (such as deliberate and grossly
++      negligent acts) or agreed to in writing, shall any Contributor be
++      liable to You for damages, including any direct, indirect, special,
++      incidental, or consequential damages of any character arising as a
++      result of this License or out of the use or inability to use the
++      Work (including but not limited to damages for loss of goodwill,
++      work stoppage, computer failure or malfunction, or any and all
++      other commercial damages or losses), even if such Contributor
++      has been advised of the possibility of such damages.
++
++   9. Accepting Warranty or Additional Liability. While redistributing
++      the Work or Derivative Works thereof, You may choose to offer,
++      and charge a fee for, acceptance of support, warranty, indemnity,
++      or other liability obligations and/or rights consistent with this
++      License. However, in accepting such obligations, You may act only
++      on Your own behalf and on Your sole responsibility, not on behalf
++      of any other Contributor, and only if You agree to indemnify,
++      defend, and hold each Contributor harmless for any liability
++      incurred by, or claims asserted against, such Contributor by reason
++      of your accepting any such warranty or additional liability.
++
++   END OF TERMS AND CONDITIONS
++
++   APPENDIX: How to apply the Apache License to your work.
++
++      To apply the Apache License to your work, attach the following
++      boilerplate notice, with the fields enclosed by brackets "[]"
++      replaced with your own identifying information. (Don't include
++      the brackets!)  The text should be enclosed in the appropriate
++      comment syntax for the file format. We also recommend that a
++      file or class name and description of purpose be included on the
++      same "printed page" as the copyright notice for easier
++      identification within third-party archives.
++
++   Copyright [yyyy] [name of copyright owner]
++
++   Licensed under the Apache License, Version 2.0 (the "License");
++   you may not use this file except in compliance with the License.
++   You may obtain a copy of the License at
++
++       http://www.apache.org/licenses/LICENSE-2.0
++
++   Unless required by applicable law or agreed to in writing, software
++   distributed under the License is distributed on an "AS IS" BASIS,
++   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++   See the License for the specific language governing permissions and
++   limitations under the License.
+diff --git a/vendor/github.com/containerd/aufs/README.md b/vendor/github.com/containerd/aufs/README.md
+new file mode 100644
+index 0000000..ffcdf67
+--- /dev/null
++++ b/vendor/github.com/containerd/aufs/README.md
+@@ -0,0 +1,34 @@
++# aufs snapshotter
++
++[![PkgGoDev](https://pkg.go.dev/badge/github.com/containerd/aufs)](https://pkg.go.dev/github.com/containerd/aufs)
++[![Build Status](https://github.com/containerd/aufs/workflows/CI/badge.svg)](https://github.com/containerd/aufs/actions?query=workflow%3ACI)
++[![codecov](https://codecov.io/gh/containerd/aufs/branch/master/graph/badge.svg)](https://codecov.io/gh/containerd/aufs)
++[![Go Report Card](https://goreportcard.com/badge/github.com/containerd/aufs)](https://goreportcard.com/report/github.com/containerd/aufs)
++
++
++AUFS implementation of the snapshot interface for containerd.
++
++## Compile
++
++To compile containerd with aufs support add the import into the `cmd/containerd/builtins_linux.go` file.
++
++```go
++package main
++
++import (
++	_ "github.com/containerd/aufs"
++	_ "github.com/containerd/containerd/linux"
++	_ "github.com/containerd/containerd/metrics/cgroups"
++	_ "github.com/containerd/containerd/snapshot/overlay"
++)
++```
++
++## Project details
++
++aufs is a containerd sub-project, licensed under the [Apache 2.0 license](./LICENSE).
++As a containerd sub-project, you will find the:
++ * [Project governance](https://github.com/containerd/project/blob/master/GOVERNANCE.md),
++ * [Maintainers](https://github.com/containerd/project/blob/master/MAINTAINERS),
++ * and [Contributing guidelines](https://github.com/containerd/project/blob/master/CONTRIBUTING.md)
++
++information in our [`containerd/project`](https://github.com/containerd/project) repository.
+diff --git a/vendor/github.com/containerd/aufs/aufs.go b/vendor/github.com/containerd/aufs/aufs.go
+new file mode 100644
+index 0000000..8974182
+--- /dev/null
++++ b/vendor/github.com/containerd/aufs/aufs.go
+@@ -0,0 +1,438 @@
++/*
++   Copyright The containerd Authors.
++
++   Licensed under the Apache License, Version 2.0 (the "License");
++   you may not use this file except in compliance with the License.
++   You may obtain a copy of the License at
++
++       http://www.apache.org/licenses/LICENSE-2.0
++
++   Unless required by applicable law or agreed to in writing, software
++   distributed under the License is distributed on an "AS IS" BASIS,
++   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++   See the License for the specific language governing permissions and
++   limitations under the License.
++*/
++
++package aufs
++
++import (
++	"bufio"
++	"context"
++	"fmt"
++	"io/ioutil"
++	"os"
++	"os/exec"
++	"path/filepath"
++	"strings"
++	"sync"
++	"syscall"
++
++	"golang.org/x/sys/unix"
++
++	"github.com/containerd/containerd/log"
++	"github.com/containerd/containerd/mount"
++	"github.com/containerd/containerd/snapshots"
++	"github.com/containerd/containerd/snapshots/storage"
++	"github.com/containerd/continuity/fs"
++	"github.com/pkg/errors"
++)
++
++var (
++	dirperm        sync.Once
++	dirpermEnabled bool
++)
++
++type snapshotter struct {
++	root string
++	ms   *storage.MetaStore
++}
++
++// New creates a new snapshotter using aufs
++func New(root string) (snapshots.Snapshotter, error) {
++	if err := supported(); err != nil {
++		return nil, err
++	}
++	if err := os.MkdirAll(root, 0700); err != nil {
++		return nil, err
++	}
++	ms, err := storage.NewMetaStore(filepath.Join(root, "metadata.db"))
++	if err != nil {
++		return nil, err
++	}
++	if err := os.Mkdir(filepath.Join(root, "snapshots"), 0700); err != nil && !os.IsExist(err) {
++		return nil, err
++	}
++	return &snapshotter{
++		root: root,
++		ms:   ms,
++	}, nil
++}
++
++func (o *snapshotter) Stat(ctx context.Context, key string) (snapshots.Info, error) {
++	ctx, t, err := o.ms.TransactionContext(ctx, false)
++	if err != nil {
++		return snapshots.Info{}, err
++	}
++	defer t.Rollback()
++	_, info, _, err := storage.GetInfo(ctx, key)
++	if err != nil {
++		return snapshots.Info{}, err
++	}
++	return info, nil
++}
++
++func (o *snapshotter) Update(ctx context.Context, info snapshots.Info, fieldpaths ...string) (snapshots.Info, error) {
++	ctx, t, err := o.ms.TransactionContext(ctx, true)
++	if err != nil {
++		return snapshots.Info{}, err
++	}
++	info, err = storage.UpdateInfo(ctx, info, fieldpaths...)
++	if err != nil {
++		t.Rollback()
++		return snapshots.Info{}, err
++	}
++	if err := t.Commit(); err != nil {
++		return snapshots.Info{}, err
++	}
++	return info, nil
++}
++
++// Usage returns the resources taken by the snapshot identified by key.
++//
++// For active snapshots, this will scan the usage of directory and may take some time.
++//
++// For committed snapshots, the value is returned from the metadata database.
++func (o *snapshotter) Usage(ctx context.Context, key string) (snapshots.Usage, error) {
++	ctx, t, err := o.ms.TransactionContext(ctx, false)
++	if err != nil {
++		return snapshots.Usage{}, err
++	}
++	id, info, usage, err := storage.GetInfo(ctx, key)
++	if err != nil {
++		return snapshots.Usage{}, err
++	}
++
++	upperPath := o.upperPath(id)
++	t.Rollback() // transaction no longer needed at this point.
++
++	if info.Kind == snapshots.KindActive {
++		du, err := fs.DiskUsage(ctx, upperPath)
++		if err != nil {
++			// TODO(stevvooe): Consider not reporting an error in this case.
++			return snapshots.Usage{}, err
++		}
++
++		usage = snapshots.Usage(du)
++	}
++
++	return usage, nil
++}
++
++func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...snapshots.Opt) ([]mount.Mount, error) {
++	return o.createSnapshot(ctx, snapshots.KindActive, key, parent, opts)
++}
++
++func (o *snapshotter) View(ctx context.Context, key, parent string, opts ...snapshots.Opt) ([]mount.Mount, error) {
++	return o.createSnapshot(ctx, snapshots.KindView, key, parent, opts)
++}
++
++// Mounts returns the mounts for the transaction identified by key. Can be
++// called on an read-write or readonly transaction.
++//
++// This can be used to recover mounts after calling View or Prepare.
++func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, error) {
++	ctx, t, err := o.ms.TransactionContext(ctx, false)
++	if err != nil {
++		return nil, err
++	}
++	s, err := storage.GetSnapshot(ctx, key)
++	t.Rollback()
++	if err != nil {
++		return nil, errors.Wrap(err, "failed to get active mount")
++	}
++	return o.mounts(s), nil
++}
++
++func (o *snapshotter) Commit(ctx context.Context, name, key string, opts ...snapshots.Opt) error {
++	ctx, t, err := o.ms.TransactionContext(ctx, true)
++	if err != nil {
++		return err
++	}
++
++	defer func() {
++		if err != nil {
++			if rerr := t.Rollback(); rerr != nil {
++				log.G(ctx).WithError(rerr).Warn("Failure rolling back transaction")
++			}
++		}
++	}()
++
++	// grab the existing id
++	id, _, _, err := storage.GetInfo(ctx, key)
++	if err != nil {
++		return err
++	}
++
++	usage, err := fs.DiskUsage(ctx, o.upperPath(id))
++	if err != nil {
++		return err
++	}
++
++	if _, err = storage.CommitActive(ctx, key, name, snapshots.Usage(usage), opts...); err != nil {
++		return errors.Wrap(err, "failed to commit snapshot")
++	}
++	return t.Commit()
++}
++
++// Remove abandons the transaction identified by key. All resources
++// associated with the key will be removed.
++func (o *snapshotter) Remove(ctx context.Context, key string) (err error) {
++	ctx, t, err := o.ms.TransactionContext(ctx, true)
++	if err != nil {
++		return err
++	}
++	defer func() {
++		if err != nil && t != nil {
++			if rerr := t.Rollback(); rerr != nil {
++				log.G(ctx).WithError(rerr).Warn("Failure rolling back transaction")
++			}
++		}
++	}()
++
++	id, _, err := storage.Remove(ctx, key)
++	if err != nil {
++		return errors.Wrap(err, "failed to remove")
++	}
++
++	path := filepath.Join(o.root, "snapshots", id)
++	renamed := filepath.Join(o.root, "snapshots", "rm-"+id)
++	if err := os.Rename(path, renamed); err != nil {
++		return errors.Wrap(err, "failed to rename")
++	}
++
++	err = t.Commit()
++	t = nil
++	if err != nil {
++		if err1 := os.Rename(renamed, path); err1 != nil {
++			// May cause inconsistent data on disk
++			log.G(ctx).WithError(err1).WithField("path", renamed).Errorf("Failed to rename after failed commit")
++		}
++		return errors.Wrap(err, "failed to commit")
++	}
++	if err := os.RemoveAll(renamed); err != nil {
++		// Must be cleaned up, any "rm-*" could be removed if no active transactions
++		log.G(ctx).WithError(err).WithField("path", renamed).Warnf("Failed to remove root filesystem")
++	}
++
++	return nil
++}
++
++// Walk the committed snapshots.
++func (o *snapshotter) Walk(ctx context.Context, fn snapshots.WalkFunc, filters ...string) error {
++	ctx, t, err := o.ms.TransactionContext(ctx, false)
++	if err != nil {
++		return err
++	}
++	defer t.Rollback()
++	return storage.WalkInfo(ctx, fn, filters...)
++}
++
++func (o *snapshotter) createSnapshot(ctx context.Context, kind snapshots.Kind, key, parent string, opts []snapshots.Opt) ([]mount.Mount, error) {
++	var (
++		path        string
++		snapshotDir = filepath.Join(o.root, "snapshots")
++	)
++
++	td, err := ioutil.TempDir(snapshotDir, "new-")
++	if err != nil {
++		return nil, errors.Wrap(err, "failed to create temp dir")
++	}
++	defer func() {
++		if err != nil {
++			if td != "" {
++				if err1 := os.RemoveAll(td); err1 != nil {
++					err = errors.Wrapf(err, "remove failed: %v", err1)
++				}
++			}
++			if path != "" {
++				if err1 := os.RemoveAll(path); err1 != nil {
++					err = errors.Wrapf(err, "failed to remove path: %v", err1)
++				}
++			}
++		}
++	}()
++
++	fs := filepath.Join(td, "fs")
++	if err = os.MkdirAll(fs, 0755); err != nil {
++		return nil, err
++	}
++
++	ctx, t, err := o.ms.TransactionContext(ctx, true)
++	if err != nil {
++		return nil, err
++	}
++
++	s, err := storage.CreateSnapshot(ctx, kind, key, parent, opts...)
++	if err != nil {
++		if rerr := t.Rollback(); rerr != nil {
++			log.G(ctx).WithError(rerr).Warn("Failure rolling back transaction")
++		}
++		return nil, errors.Wrap(err, "failed to create active")
++	}
++
++	if len(s.ParentIDs) > 0 {
++		st, err := os.Stat(filepath.Join(o.upperPath(s.ParentIDs[0])))
++		if err != nil {
++			if rerr := t.Rollback(); rerr != nil {
++				log.G(ctx).WithError(rerr).Warn("Failure rolling back transaction")
++			}
++			return nil, errors.Wrap(err, "failed to stat parent")
++		}
++
++		stat := st.Sys().(*syscall.Stat_t)
++
++		if err := os.Lchown(fs, int(stat.Uid), int(stat.Gid)); err != nil {
++			if rerr := t.Rollback(); rerr != nil {
++				log.G(ctx).WithError(rerr).Warn("Failure rolling back transaction")
++			}
++			return nil, errors.Wrap(err, "failed to chown")
++		}
++	}
++
++	path = filepath.Join(snapshotDir, s.ID)
++	if err = os.Rename(td, path); err != nil {
++		if rerr := t.Rollback(); rerr != nil {
++			log.G(ctx).WithError(rerr).Warn("Failure rolling back transaction")
++		}
++		return nil, errors.Wrap(err, "failed to rename")
++	}
++	td = ""
++
++	if err = t.Commit(); err != nil {
++		return nil, errors.Wrap(err, "commit failed")
++	}
++
++	return o.mounts(s), nil
++}
++
++func (o *snapshotter) mounts(s storage.Snapshot) []mount.Mount {
++	if len(s.ParentIDs) == 0 {
++		// if we only have one layer/no parents then just return a bind mount
++		roFlag := "rw"
++		if s.Kind == snapshots.KindView {
++			roFlag = "ro"
++		}
++
++		return []mount.Mount{
++			{
++				Source: o.upperPath(s.ID),
++				Type:   "bind",
++				Options: []string{
++					roFlag,
++					"rbind",
++				},
++			},
++		}
++	}
++
++	aufsOptions := []string{
++		"br",
++	}
++
++	if s.Kind == snapshots.KindActive {
++		aufsOptions = append(aufsOptions,
++			fmt.Sprintf("%s=rw", o.upperPath(s.ID)),
++		)
++	} else if len(s.ParentIDs) == 1 {
++		return []mount.Mount{
++			{
++				Source: o.upperPath(s.ParentIDs[0]),
++				Type:   "bind",
++				Options: []string{
++					"ro",
++					"rbind",
++				},
++			},
++		}
++	}
++
++	for i := range s.ParentIDs {
++		aufsOptions = append(aufsOptions, fmt.Sprintf("%s=ro+wh", o.upperPath(s.ParentIDs[i])))
++	}
++	options := []string{
++		"dio",
++		"xino=/dev/shm/aufs.xino",
++	}
++	if useDirperm() {
++		options = append(options, "dirperm1")
++	}
++
++	options = append(options, strings.Join(aufsOptions, ":"))
++	return []mount.Mount{
++		{
++			Type:    "aufs",
++			Source:  "none",
++			Options: options,
++		},
++	}
++
++}
++
++func (o *snapshotter) upperPath(id string) string {
++	return filepath.Join(o.root, "snapshots", id, "fs")
++}
++
++func supported() error {
++	// modprobe the aufs module before checking
++	var probeError string
++	cmd := exec.Command("modprobe", "aufs")
++	out, err := cmd.CombinedOutput()
++	if err != nil {
++		probeError = fmt.Sprintf(" (modprobe aufs failed: %v %q)", err, out)
++	}
++
++	f, err := os.Open("/proc/filesystems")
++	if err != nil {
++		return err
++	}
++	defer f.Close()
++
++	s := bufio.NewScanner(f)
++	for s.Scan() {
++		if strings.Contains(s.Text(), "aufs") {
++			return nil
++		}
++	}
++	return errors.Errorf("aufs is not supported" + probeError)
++}
++
++// useDirperm checks dirperm1 mount option can be used with the current
++// version of aufs.
++func useDirperm() bool {
++	dirperm.Do(func() {
++		base, err := ioutil.TempDir("", "docker-aufs-base")
++		if err != nil {
++			return
++		}
++		defer os.RemoveAll(base)
++
++		union, err := ioutil.TempDir("", "docker-aufs-union")
++		if err != nil {
++			return
++		}
++		defer os.RemoveAll(union)
++
++		opts := fmt.Sprintf("br:%s,dirperm1,xino=/dev/shm/aufs.xino", base)
++		if err := unix.Mount("none", union, "aufs", 0, opts); err != nil {
++			return
++		}
++		dirpermEnabled = true
++		unix.Unmount(union, 0)
++	})
++	return dirpermEnabled
++}
++
++func (o *snapshotter) Close() error {
++	return o.ms.Close()
++}
+diff --git a/vendor/github.com/containerd/aufs/plugin/plugin.go b/vendor/github.com/containerd/aufs/plugin/plugin.go
+new file mode 100644
+index 0000000..5ef194a
+--- /dev/null
++++ b/vendor/github.com/containerd/aufs/plugin/plugin.go
+@@ -0,0 +1,60 @@
++/*
++   Copyright The containerd Authors.
++
++   Licensed under the Apache License, Version 2.0 (the "License");
++   you may not use this file except in compliance with the License.
++   You may obtain a copy of the License at
++
++       http://www.apache.org/licenses/LICENSE-2.0
++
++   Unless required by applicable law or agreed to in writing, software
++   distributed under the License is distributed on an "AS IS" BASIS,
++   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++   See the License for the specific language governing permissions and
++   limitations under the License.
++*/
++
++package plugin
++
++import (
++	"github.com/containerd/aufs"
++	"github.com/containerd/containerd/platforms"
++	"github.com/containerd/containerd/plugin"
++	"github.com/pkg/errors"
++)
++
++// Config represents configuration for the zfs plugin
++type Config struct {
++	// Root directory for the plugin
++	RootPath string `toml:"root_path"`
++}
++
++func init() {
++	plugin.Register(&plugin.Registration{
++		Type:   plugin.SnapshotPlugin,
++		ID:     "aufs",
++		Config: &Config{},
++		InitFn: func(ic *plugin.InitContext) (interface{}, error) {
++			ic.Meta.Platforms = append(ic.Meta.Platforms, platforms.DefaultSpec())
++
++			// get config
++			config, ok := ic.Config.(*Config)
++			if !ok {
++				return nil, errors.New("invalid aufs configuration")
++			}
++
++			// use default ic.Root as root path if config doesn't have a valid root path
++			root := ic.Root
++			if len(config.RootPath) != 0 {
++				root = config.RootPath
++			}
++			ic.Meta.Exports["root"] = root
++
++			snapshotter, err := aufs.New(root)
++			if err != nil {
++				return nil, errors.Wrap(plugin.ErrSkipPlugin, err.Error())
++			}
++			return snapshotter, nil
++		},
++	})
++}
+diff --git a/vendor/github.com/containerd/zfs/LICENSE b/vendor/github.com/containerd/zfs/LICENSE
+new file mode 100644
+index 0000000..d645695
+--- /dev/null
++++ b/vendor/github.com/containerd/zfs/LICENSE
+@@ -0,0 +1,202 @@
++
++                                 Apache License
++                           Version 2.0, January 2004
++                        http://www.apache.org/licenses/
++
++   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
++
++   1. Definitions.
++
++      "License" shall mean the terms and conditions for use, reproduction,
++      and distribution as defined by Sections 1 through 9 of this document.
++
++      "Licensor" shall mean the copyright owner or entity authorized by
++      the copyright owner that is granting the License.
++
++      "Legal Entity" shall mean the union of the acting entity and all
++      other entities that control, are controlled by, or are under common
++      control with that entity. For the purposes of this definition,
++      "control" means (i) the power, direct or indirect, to cause the
++      direction or management of such entity, whether by contract or
++      otherwise, or (ii) ownership of fifty percent (50%) or more of the
++      outstanding shares, or (iii) beneficial ownership of such entity.
++
++      "You" (or "Your") shall mean an individual or Legal Entity
++      exercising permissions granted by this License.
++
++      "Source" form shall mean the preferred form for making modifications,
++      including but not limited to software source code, documentation
++      source, and configuration files.
++
++      "Object" form shall mean any form resulting from mechanical
++      transformation or translation of a Source form, including but
++      not limited to compiled object code, generated documentation,
++      and conversions to other media types.
++
++      "Work" shall mean the work of authorship, whether in Source or
++      Object form, made available under the License, as indicated by a
++      copyright notice that is included in or attached to the work
++      (an example is provided in the Appendix below).
++
++      "Derivative Works" shall mean any work, whether in Source or Object
++      form, that is based on (or derived from) the Work and for which the
++      editorial revisions, annotations, elaborations, or other modifications
++      represent, as a whole, an original work of authorship. For the purposes
++      of this License, Derivative Works shall not include works that remain
++      separable from, or merely link (or bind by name) to the interfaces of,
++      the Work and Derivative Works thereof.
++
++      "Contribution" shall mean any work of authorship, including
++      the original version of the Work and any modifications or additions
++      to that Work or Derivative Works thereof, that is intentionally
++      submitted to Licensor for inclusion in the Work by the copyright owner
++      or by an individual or Legal Entity authorized to submit on behalf of
++      the copyright owner. For the purposes of this definition, "submitted"
++      means any form of electronic, verbal, or written communication sent
++      to the Licensor or its representatives, including but not limited to
++      communication on electronic mailing lists, source code control systems,
++      and issue tracking systems that are managed by, or on behalf of, the
++      Licensor for the purpose of discussing and improving the Work, but
++      excluding communication that is conspicuously marked or otherwise
++      designated in writing by the copyright owner as "Not a Contribution."
++
++      "Contributor" shall mean Licensor and any individual or Legal Entity
++      on behalf of whom a Contribution has been received by Licensor and
++      subsequently incorporated within the Work.
++
++   2. Grant of Copyright License. Subject to the terms and conditions of
++      this License, each Contributor hereby grants to You a perpetual,
++      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
++      copyright license to reproduce, prepare Derivative Works of,
++      publicly display, publicly perform, sublicense, and distribute the
++      Work and such Derivative Works in Source or Object form.
++
++   3. Grant of Patent License. Subject to the terms and conditions of
++      this License, each Contributor hereby grants to You a perpetual,
++      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
++      (except as stated in this section) patent license to make, have made,
++      use, offer to sell, sell, import, and otherwise transfer the Work,
++      where such license applies only to those patent claims licensable
++      by such Contributor that are necessarily infringed by their
++      Contribution(s) alone or by combination of their Contribution(s)
++      with the Work to which such Contribution(s) was submitted. If You
++      institute patent litigation against any entity (including a
++      cross-claim or counterclaim in a lawsuit) alleging that the Work
++      or a Contribution incorporated within the Work constitutes direct
++      or contributory patent infringement, then any patent licenses
++      granted to You under this License for that Work shall terminate
++      as of the date such litigation is filed.
++
++   4. Redistribution. You may reproduce and distribute copies of the
++      Work or Derivative Works thereof in any medium, with or without
++      modifications, and in Source or Object form, provided that You
++      meet the following conditions:
++
++      (a) You must give any other recipients of the Work or
++          Derivative Works a copy of this License; and
++
++      (b) You must cause any modified files to carry prominent notices
++          stating that You changed the files; and
++
++      (c) You must retain, in the Source form of any Derivative Works
++          that You distribute, all copyright, patent, trademark, and
++          attribution notices from the Source form of the Work,
++          excluding those notices that do not pertain to any part of
++          the Derivative Works; and
++
++      (d) If the Work includes a "NOTICE" text file as part of its
++          distribution, then any Derivative Works that You distribute must
++          include a readable copy of the attribution notices contained
++          within such NOTICE file, excluding those notices that do not
++          pertain to any part of the Derivative Works, in at least one
++          of the following places: within a NOTICE text file distributed
++          as part of the Derivative Works; within the Source form or
++          documentation, if provided along with the Derivative Works; or,
++          within a display generated by the Derivative Works, if and
++          wherever such third-party notices normally appear. The contents
++          of the NOTICE file are for informational purposes only and
++          do not modify the License. You may add Your own attribution
++          notices within Derivative Works that You distribute, alongside
++          or as an addendum to the NOTICE text from the Work, provided
++          that such additional attribution notices cannot be construed
++          as modifying the License.
++
++      You may add Your own copyright statement to Your modifications and
++      may provide additional or different license terms and conditions
++      for use, reproduction, or distribution of Your modifications, or
++      for any such Derivative Works as a whole, provided Your use,
++      reproduction, and distribution of the Work otherwise complies with
++      the conditions stated in this License.
++
++   5. Submission of Contributions. Unless You explicitly state otherwise,
++      any Contribution intentionally submitted for inclusion in the Work
++      by You to the Licensor shall be under the terms and conditions of
++      this License, without any additional terms or conditions.
++      Notwithstanding the above, nothing herein shall supersede or modify
++      the terms of any separate license agreement you may have executed
++      with Licensor regarding such Contributions.
++
++   6. Trademarks. This License does not grant permission to use the trade
++      names, trademarks, service marks, or product names of the Licensor,
++      except as required for reasonable and customary use in describing the
++      origin of the Work and reproducing the content of the NOTICE file.
++
++   7. Disclaimer of Warranty. Unless required by applicable law or
++      agreed to in writing, Licensor provides the Work (and each
++      Contributor provides its Contributions) on an "AS IS" BASIS,
++      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
++      implied, including, without limitation, any warranties or conditions
++      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
++      PARTICULAR PURPOSE. You are solely responsible for determining the
++      appropriateness of using or redistributing the Work and assume any
++      risks associated with Your exercise of permissions under this License.
++
++   8. Limitation of Liability. In no event and under no legal theory,
++      whether in tort (including negligence), contract, or otherwise,
++      unless required by applicable law (such as deliberate and grossly
++      negligent acts) or agreed to in writing, shall any Contributor be
++      liable to You for damages, including any direct, indirect, special,
++      incidental, or consequential damages of any character arising as a
++      result of this License or out of the use or inability to use the
++      Work (including but not limited to damages for loss of goodwill,
++      work stoppage, computer failure or malfunction, or any and all
++      other commercial damages or losses), even if such Contributor
++      has been advised of the possibility of such damages.
++
++   9. Accepting Warranty or Additional Liability. While redistributing
++      the Work or Derivative Works thereof, You may choose to offer,
++      and charge a fee for, acceptance of support, warranty, indemnity,
++      or other liability obligations and/or rights consistent with this
++      License. However, in accepting such obligations, You may act only
++      on Your own behalf and on Your sole responsibility, not on behalf
++      of any other Contributor, and only if You agree to indemnify,
++      defend, and hold each Contributor harmless for any liability
++      incurred by, or claims asserted against, such Contributor by reason
++      of your accepting any such warranty or additional liability.
++
++   END OF TERMS AND CONDITIONS
++
++   APPENDIX: How to apply the Apache License to your work.
++
++      To apply the Apache License to your work, attach the following
++      boilerplate notice, with the fields enclosed by brackets "[]"
++      replaced with your own identifying information. (Don't include
++      the brackets!)  The text should be enclosed in the appropriate
++      comment syntax for the file format. We also recommend that a
++      file or class name and description of purpose be included on the
++      same "printed page" as the copyright notice for easier
++      identification within third-party archives.
++
++   Copyright [yyyy] [name of copyright owner]
++
++   Licensed under the Apache License, Version 2.0 (the "License");
++   you may not use this file except in compliance with the License.
++   You may obtain a copy of the License at
++
++       http://www.apache.org/licenses/LICENSE-2.0
++
++   Unless required by applicable law or agreed to in writing, software
++   distributed under the License is distributed on an "AS IS" BASIS,
++   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++   See the License for the specific language governing permissions and
++   limitations under the License.
+diff --git a/vendor/github.com/containerd/zfs/README.md b/vendor/github.com/containerd/zfs/README.md
+new file mode 100644
+index 0000000..b747037
+--- /dev/null
++++ b/vendor/github.com/containerd/zfs/README.md
+@@ -0,0 +1,35 @@
++# [containerd](https://github.com/containerd/containerd) ZFS snapshotter plugin
++
++[![PkgGoDev](https://pkg.go.dev/badge/github.com/containerd/zfs)](https://pkg.go.dev/github.com/containerd/zfs)
++[![Build Status](https://github.com/containerd/zfs/actions/workflows/ci.yml/badge.svg)](https://github.com/containerd/zfs/actions/workflows/ci.yml)
++[![Go Report Card](https://goreportcard.com/badge/github.com/containerd/zfs)](https://goreportcard.com/report/github.com/containerd/zfs)
++[![codecov](https://codecov.io/gh/containerd/zfs/branch/main/graph/badge.svg)](https://codecov.io/gh/containerd/zfs)
++
++ZFS snapshotter plugin for containerd.
++
++This plugin is tested on Linux with Ubuntu.  It should be compatible with FreeBSD.
++
++## Usage
++
++The plugin is built-in by default since containerd 1.1.
++No need to recompile containerd or execute a proxy snapshotter process.
++
++1. Set up a ZFS filesystem.
++The ZFS filesystem name is arbitrary but the mount point needs to be `/var/lib/containerd/io.containerd.snapshotter.v1.zfs`, when the containerd root is set to `/var/lib/containerd`.
++```console
++$ zfs create -o mountpoint=/var/lib/containerd/io.containerd.snapshotter.v1.zfs your-zpool/containerd
++```
++
++2. Start containerd.
++
++3. e.g. `ctr pull --snapshotter=zfs ...`
++
++## Project details
++
++The zfs plugin is a containerd sub-project, licensed under the [Apache 2.0 license](./LICENSE).
++As a containerd sub-project, you will find the:
++ * [Project governance](https://github.com/containerd/project/blob/main/GOVERNANCE.md),
++ * [Maintainers](https://github.com/containerd/project/blob/main/MAINTAINERS),
++ * and [Contributing guidelines](https://github.com/containerd/project/blob/main/CONTRIBUTING.md)
++
++information in our [`containerd/project`](https://github.com/containerd/project) repository.
+diff --git a/vendor/github.com/containerd/zfs/codecov.yml b/vendor/github.com/containerd/zfs/codecov.yml
+new file mode 100644
+index 0000000..69cb760
+--- /dev/null
++++ b/vendor/github.com/containerd/zfs/codecov.yml
+@@ -0,0 +1 @@
++comment: false
+diff --git a/vendor/github.com/containerd/zfs/plugin/plugin.go b/vendor/github.com/containerd/zfs/plugin/plugin.go
+new file mode 100644
+index 0000000..b318949
+--- /dev/null
++++ b/vendor/github.com/containerd/zfs/plugin/plugin.go
+@@ -0,0 +1,62 @@
++//go:build linux || freebsd
++
++/*
++   Copyright The containerd Authors.
++
++   Licensed under the Apache License, Version 2.0 (the "License");
++   you may not use this file except in compliance with the License.
++   You may obtain a copy of the License at
++
++       http://www.apache.org/licenses/LICENSE-2.0
++
++   Unless required by applicable law or agreed to in writing, software
++   distributed under the License is distributed on an "AS IS" BASIS,
++   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++   See the License for the specific language governing permissions and
++   limitations under the License.
++*/
++
++package plugin
++
++import (
++	"errors"
++	"fmt"
++
++	"github.com/containerd/containerd/platforms"
++	"github.com/containerd/containerd/plugin"
++	"github.com/containerd/zfs"
++)
++
++// Config represents configuration for the zfs plugin
++type Config struct {
++	// Root directory for the plugin
++	RootPath string `toml:"root_path"`
++}
++
++func init() {
++	plugin.Register(&plugin.Registration{
++		Type:   plugin.SnapshotPlugin,
++		ID:     "zfs",
++		Config: &Config{},
++		InitFn: func(ic *plugin.InitContext) (interface{}, error) {
++			ic.Meta.Platforms = append(ic.Meta.Platforms, platforms.DefaultSpec())
++
++			// get config
++			config, ok := ic.Config.(*Config)
++			if !ok {
++				return nil, errors.New("invalid zfs configuration")
++			}
++			// use default ic.Root as root path if config doesn't have a valid root path
++			root := ic.Root
++			if len(config.RootPath) != 0 {
++				root = config.RootPath
++			}
++			ic.Meta.Exports["root"] = root
++			snapshotter, err := zfs.NewSnapshotter(root)
++			if err != nil {
++				return nil, fmt.Errorf("%s: %w", err.Error(), plugin.ErrSkipPlugin)
++			}
++			return snapshotter, nil
++		},
++	})
++}
+diff --git a/vendor/github.com/containerd/zfs/zfs.go b/vendor/github.com/containerd/zfs/zfs.go
+new file mode 100644
+index 0000000..e48b956
+--- /dev/null
++++ b/vendor/github.com/containerd/zfs/zfs.go
+@@ -0,0 +1,368 @@
++//go:build linux || freebsd
++
++/*
++   Copyright The containerd Authors.
++
++   Licensed under the Apache License, Version 2.0 (the "License");
++   you may not use this file except in compliance with the License.
++   You may obtain a copy of the License at
++
++       http://www.apache.org/licenses/LICENSE-2.0
++
++   Unless required by applicable law or agreed to in writing, software
++   distributed under the License is distributed on an "AS IS" BASIS,
++   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++   See the License for the specific language governing permissions and
++   limitations under the License.
++*/
++
++package zfs
++
++import (
++	"context"
++	"fmt"
++	"math"
++	"path/filepath"
++
++	"github.com/containerd/containerd/log"
++	"github.com/containerd/containerd/mount"
++	"github.com/containerd/containerd/snapshots"
++	"github.com/containerd/containerd/snapshots/storage"
++	"github.com/mistifyio/go-zfs/v3"
++)
++
++const (
++	// snapshotSuffix is used as follows:
++	//	active := filepath.Join(dataset.Name, id)
++	//      committed := active + "@" + snapshotSuffix
++	snapshotSuffix = "snapshot"
++
++	// Using this typed MaxInt64 to prevent integer overlow on 32bit
++	maxSnapshotSize int64 = math.MaxInt64
++)
++
++type snapshotter struct {
++	dataset *zfs.Dataset
++	ms      *storage.MetaStore
++}
++
++// NewSnapshotter returns a Snapshotter using zfs. Uses the provided
++// root directory for snapshots and stores the metadata in
++// a file in the provided root.
++// root needs to be a mount point of zfs.
++func NewSnapshotter(root string) (snapshots.Snapshotter, error) {
++	m, err := mount.Lookup(root)
++	if err != nil {
++		return nil, err
++	}
++	if m.FSType != "zfs" {
++		return nil, fmt.Errorf("path %s must be a zfs filesystem to be used with the zfs snapshotter", root)
++	}
++	dataset, err := zfs.GetDataset(m.Source)
++	if err != nil {
++		return nil, err
++	}
++
++	ms, err := storage.NewMetaStore(filepath.Join(root, "metadata.db"))
++	if err != nil {
++		return nil, err
++	}
++
++	b := &snapshotter{
++		dataset: dataset,
++		ms:      ms,
++	}
++	return b, nil
++}
++
++var zfsCreateProperties = map[string]string{
++	"mountpoint": "legacy",
++}
++
++// createFilesystem creates but not mount.
++func createFilesystem(datasetName string) (*zfs.Dataset, error) {
++	return zfs.CreateFilesystem(datasetName, zfsCreateProperties)
++}
++
++// cloneFilesystem clones but not mount.
++func cloneFilesystem(datasetName string, snapshot *zfs.Dataset) (*zfs.Dataset, error) {
++	return snapshot.Clone(datasetName, zfsCreateProperties)
++}
++
++func destroy(dataset *zfs.Dataset) error {
++	return dataset.Destroy(zfs.DestroyDefault)
++}
++
++func destroySnapshot(dataset *zfs.Dataset) error {
++	return dataset.Destroy(zfs.DestroyDeferDeletion)
++}
++
++// Stat returns the info for an active or committed snapshot by name or
++// key.
++//
++// Should be used for parent resolution, existence checks and to discern
++// the kind of snapshot.
++func (z *snapshotter) Stat(ctx context.Context, key string) (snapshots.Info, error) {
++	ctx, t, err := z.ms.TransactionContext(ctx, false)
++	if err != nil {
++		return snapshots.Info{}, err
++	}
++	defer t.Rollback() //nolint:errcheck
++	_, info, _, err := storage.GetInfo(ctx, key)
++	if err != nil {
++		return snapshots.Info{}, err
++	}
++
++	return info, nil
++}
++
++// Usage retrieves the disk usage of the top-level snapshot.
++func (z *snapshotter) Usage(ctx context.Context, key string) (snapshots.Usage, error) {
++	return z.usage(ctx, key)
++}
++
++func (z *snapshotter) usage(ctx context.Context, key string) (snapshots.Usage, error) {
++	ctx, t, err := z.ms.TransactionContext(ctx, false)
++	if err != nil {
++		return snapshots.Usage{}, err
++	}
++	id, info, usage, err := storage.GetInfo(ctx, key)
++	t.Rollback() //nolint:errcheck
++
++	if err != nil {
++		return snapshots.Usage{}, err
++	}
++
++	if info.Kind == snapshots.KindActive {
++		activeName := filepath.Join(z.dataset.Name, id)
++		sDataset, err := zfs.GetDataset(activeName)
++		if err != nil {
++			return snapshots.Usage{}, err
++		}
++
++		if int64(sDataset.Used) > maxSnapshotSize {
++			return snapshots.Usage{}, fmt.Errorf("Dataset size exceeds maximum snapshot size of %d bytes", maxSnapshotSize)
++		}
++
++		usage = snapshots.Usage{
++			Size:   int64(sDataset.Used),
++			Inodes: -1,
++		}
++	}
++
++	return usage, nil
++}
++
++// Walk the committed snapshots.
++func (z *snapshotter) Walk(ctx context.Context, fn snapshots.WalkFunc, filters ...string) error {
++	ctx, t, err := z.ms.TransactionContext(ctx, false)
++	if err != nil {
++		return err
++	}
++	defer t.Rollback() //nolint:errcheck
++	return storage.WalkInfo(ctx, fn, filters...)
++}
++
++func (z *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...snapshots.Opt) ([]mount.Mount, error) {
++	return z.createSnapshot(ctx, snapshots.KindActive, key, parent, opts...)
++}
++
++func (z *snapshotter) View(ctx context.Context, key, parent string, opts ...snapshots.Opt) ([]mount.Mount, error) {
++	return z.createSnapshot(ctx, snapshots.KindView, key, parent, opts...)
++}
++
++func (z *snapshotter) createSnapshot(ctx context.Context, kind snapshots.Kind, key, parent string, opts ...snapshots.Opt) ([]mount.Mount, error) {
++	ctx, t, err := z.ms.TransactionContext(ctx, true)
++	if err != nil {
++		return nil, err
++	}
++	defer func() {
++		if err != nil && t != nil {
++			if rerr := t.Rollback(); rerr != nil {
++				log.G(ctx).WithError(rerr).Warn("Failure rolling back transaction")
++			}
++		}
++	}()
++
++	a, err := storage.CreateSnapshot(ctx, kind, key, parent, opts...)
++	if err != nil {
++		return nil, err
++	}
++
++	targetName := filepath.Join(z.dataset.Name, a.ID)
++	var target *zfs.Dataset
++	if len(a.ParentIDs) == 0 {
++		target, err = createFilesystem(targetName)
++		if err != nil {
++			return nil, err
++		}
++	} else {
++		parent0Name := filepath.Join(z.dataset.Name, a.ParentIDs[0]) + "@" + snapshotSuffix
++		parent0, err := zfs.GetDataset(parent0Name)
++		if err != nil {
++			return nil, err
++		}
++		target, err = cloneFilesystem(targetName, parent0)
++		if err != nil {
++			return nil, err
++		}
++	}
++
++	err = t.Commit()
++	t = nil
++	if err != nil {
++		if derr := destroy(target); derr != nil {
++			log.G(ctx).WithError(derr).WithField("targetName", targetName).Error("failed to delete dataset")
++		}
++		return nil, err
++	}
++	readonly := kind == snapshots.KindView
++	return z.mounts(target, readonly)
++}
++
++func (z *snapshotter) mounts(dataset *zfs.Dataset, readonly bool) ([]mount.Mount, error) {
++	var options []string
++	if readonly {
++		options = append(options, "ro")
++	}
++	return []mount.Mount{
++		{
++			Type:    "zfs",
++			Source:  dataset.Name,
++			Options: options,
++		},
++	}, nil
++}
++
++func (z *snapshotter) Commit(ctx context.Context, name, key string, opts ...snapshots.Opt) (err error) {
++	usage, err := z.usage(ctx, key)
++	if err != nil {
++		return fmt.Errorf("failed to compute usage: %w", err)
++	}
++
++	ctx, t, err := z.ms.TransactionContext(ctx, true)
++	if err != nil {
++		return err
++	}
++	defer func() {
++		if err != nil && t != nil {
++			if rerr := t.Rollback(); rerr != nil {
++				log.G(ctx).WithError(rerr).Warn("Failure rolling back transaction")
++			}
++		}
++	}()
++
++	id, err := storage.CommitActive(ctx, key, name, usage, opts...)
++	if err != nil {
++		return fmt.Errorf("failed to commit: %w", err)
++	}
++
++	activeName := filepath.Join(z.dataset.Name, id)
++	active, err := zfs.GetDataset(activeName)
++	if err != nil {
++		return err
++	}
++	snapshot, err := active.Snapshot(snapshotSuffix, false)
++	if err != nil {
++		return err
++	}
++	err = t.Commit()
++	t = nil
++	if err != nil {
++		snapshotName := activeName + "@" + snapshotSuffix
++		if derr := destroySnapshot(snapshot); derr != nil {
++			log.G(ctx).WithError(derr).WithField("snapshotName", snapshotName).Error("failed to delete dataset")
++		}
++		return err
++	}
++	return nil
++}
++
++// Mounts returns the mounts for the transaction identified by key. Can be
++// called on an read-write or readonly transaction.
++//
++// This can be used to recover mounts after calling View or Prepare.
++func (z *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, error) {
++	ctx, t, err := z.ms.TransactionContext(ctx, false)
++	if err != nil {
++		return nil, err
++	}
++	s, err := storage.GetSnapshot(ctx, key)
++	t.Rollback() //nolint:errcheck
++	if err != nil {
++		return nil, fmt.Errorf("failed to get active snapshot: %w", err)
++	}
++	sName := filepath.Join(z.dataset.Name, s.ID)
++	sDataset, err := zfs.GetDataset(sName)
++	if err != nil {
++		return nil, err
++	}
++	return z.mounts(sDataset, false)
++}
++
++// Remove abandons the transaction identified by key. All resources
++// associated with the key will be removed.
++func (z *snapshotter) Remove(ctx context.Context, key string) (err error) {
++	ctx, t, err := z.ms.TransactionContext(ctx, true)
++	if err != nil {
++		return err
++	}
++	defer func() {
++		if err != nil && t != nil {
++			if rerr := t.Rollback(); rerr != nil {
++				log.G(ctx).WithError(rerr).Warn("Failure rolling back transaction")
++			}
++		}
++		// FIXME: rolling back the removed ZFS dataset is unsupported yet
++	}()
++
++	id, k, err := storage.Remove(ctx, key)
++	if err != nil {
++		return fmt.Errorf("failed to remove snapshot: %w", err)
++	}
++
++	datasetName := filepath.Join(z.dataset.Name, id)
++	if k == snapshots.KindCommitted {
++		snapshotName := datasetName + "@" + snapshotSuffix
++		snapshot, err := zfs.GetDataset(snapshotName)
++		if err != nil {
++			return err
++		}
++		if err = destroySnapshot(snapshot); err != nil {
++			return err
++		}
++	}
++	dataset, err := zfs.GetDataset(datasetName)
++	if err != nil {
++		return err
++	}
++	if err = destroy(dataset); err != nil {
++		return err
++	}
++	err = t.Commit()
++	t = nil
++	return err
++}
++
++func (o *snapshotter) Update(ctx context.Context, info snapshots.Info, fieldpaths ...string) (snapshots.Info, error) {
++	ctx, t, err := o.ms.TransactionContext(ctx, true)
++	if err != nil {
++		return snapshots.Info{}, err
++	}
++
++	info, err = storage.UpdateInfo(ctx, info, fieldpaths...)
++	if err != nil {
++		t.Rollback() //nolint:errcheck
++		return snapshots.Info{}, err
++	}
++
++	if err := t.Commit(); err != nil {
++		return snapshots.Info{}, err
++	}
++
++	return info, nil
++}
++
++func (o *snapshotter) Close() error {
++	return o.ms.Close()
++}

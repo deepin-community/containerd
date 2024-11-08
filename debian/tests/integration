@@ -8,6 +8,14 @@ systemctl status containerd || true
 
 dh_auto_configure -O--buildsystem=golang -O--builddirectory=_build
 
+# build and make runc-fp available
+DH_GOLANG_BUILDPKG=github.com/containerd/containerd/integration/failpoint/cmd/runc-fp \
+    dh_auto_build -O--buildsystem=golang -O--builddirectory=_build
+
+cp -v _build/bin/runc-fp /usr/local/bin
+PATH=$(readlink -f _build/bin):$PATH
+export PATH
+
 # overlayfs not work in lxc
 find _build/ -name snapshotter_default_linux.go -exec sed -i 's|DefaultSnapshotter = "overlayfs"|DefaultSnapshotter = "native"|g' {} +
 

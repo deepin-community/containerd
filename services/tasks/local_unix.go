@@ -1,5 +1,4 @@
 //go:build !windows && !freebsd && !darwin
-// +build !windows,!freebsd,!darwin
 
 /*
    Copyright The containerd Authors.
@@ -22,9 +21,9 @@ package tasks
 import (
 	"errors"
 
-	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/plugin"
 	"github.com/containerd/containerd/runtime"
+	"github.com/containerd/log"
 )
 
 var tasksServiceRequires = []plugin.Type{
@@ -33,6 +32,7 @@ var tasksServiceRequires = []plugin.Type{
 	plugin.RuntimePluginV2,
 	plugin.MetadataPlugin,
 	plugin.TaskMonitorPlugin,
+	plugin.WarningPlugin,
 }
 
 func loadV1Runtimes(ic *plugin.InitContext) (map[string]runtime.PlatformRuntime, error) {

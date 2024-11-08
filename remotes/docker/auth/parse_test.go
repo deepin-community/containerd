@@ -85,3 +85,11 @@ func TestParseAuthHeader(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, "registry.example.io", actual)
 }
+
+func FuzzParseAuthHeader(f *testing.F) {
+	f.Add(`Bearer realm="https://example.com/token",service="example.com",scope="repository:foo/bar:pull,push"`)
+	f.Fuzz(func(t *testing.T, v string) {
+		h := http.Header{http.CanonicalHeaderKey("WWW-Authenticate"): []string{v}}
+		_ = ParseAuthHeader(h)
+	})
+}
