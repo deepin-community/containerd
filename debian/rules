@@ -12,13 +12,9 @@ EXCLUDES += integration
 EXCLUDES += tracing/plugin
 EXCLUDES += contrib/fuzz
 
-# pkg/cri/server tests needs permission in schroot
-# EXCLUDES += pkg/cri/server
-
 # Exclude extra files in -dev package to make it slimmer.
 EXTRA_EXCLUDES += vendor
 EXTRA_EXCLUDES += $(filter-out cmd/ctr,$(wildcard cmd/*))
-EXTRA_EXCLUDES += pkg/nri pkg/cri
 
 export DH_GOLANG_EXCLUDES := $(EXCLUDES)
 

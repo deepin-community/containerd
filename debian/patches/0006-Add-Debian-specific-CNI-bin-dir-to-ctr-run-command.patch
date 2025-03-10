@@ -4,8 +4,9 @@ Subject: Add Debian specific CNI bin dir to ctr run command
 
 Forwarded: not-needed
 ---
- cmd/ctr/commands/run/run.go | 2 +-
- 1 file changed, 1 insertion(+), 1 deletion(-)
+ cmd/ctr/commands/run/run.go   | 2 +-
+ pkg/cri/config/config_unix.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
 
 diff --git a/cmd/ctr/commands/run/run.go b/cmd/ctr/commands/run/run.go
 index c6833ae..3f8d4e5 100644
@@ -20,3 +21,16 @@ index c6833ae..3f8d4e5 100644
  				return err
  			}
  		}
+diff --git a/pkg/cri/config/config_unix.go b/pkg/cri/config/config_unix.go
+index 4a79063..e992378 100644
+--- a/pkg/cri/config/config_unix.go
++++ b/pkg/cri/config/config_unix.go
+@@ -63,7 +63,7 @@ func DefaultConfig() PluginConfig {
+ 	tree, _ := toml.Load(defaultRuncV2Opts)
+ 	return PluginConfig{
+ 		CniConfig: CniConfig{
+-			NetworkPluginBinDir:        "/opt/cni/bin",
++			NetworkPluginBinDir:        "/usr/lib/cni",
+ 			NetworkPluginConfDir:       "/etc/cni/net.d",
+ 			NetworkPluginMaxConfNum:    1, // only one CNI plugin config file will be loaded
+ 			NetworkPluginSetupSerially: false,
