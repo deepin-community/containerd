@@ -50,7 +50,7 @@ index 879ddcc..ecadba3 100644
  
  	t.Logf("Start test sandboxes and containers")
 diff --git a/pkg/process/io_test.go b/pkg/process/io_test.go
-index ed7c9c1..a19c0f5 100644
+index 9a9fdbf..36ceabb 100644
 --- a/pkg/process/io_test.go
 +++ b/pkg/process/io_test.go
 @@ -47,7 +47,7 @@ func TestNewBinaryIO(t *testing.T) {

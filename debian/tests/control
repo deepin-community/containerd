@@ -20,7 +20,6 @@ Depends: ca-certificates,
          @builddeps@
 Restrictions: allow-stderr,
               breaks-testbed,
-              flaky,
               isolation-container,
               needs-internet,
               needs-root

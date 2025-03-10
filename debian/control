@@ -20,6 +20,7 @@ Build-Depends: debhelper-compat (= 13),
                golang-github-containerd-fifo-dev (>= 1.0.0~),
                golang-github-containerd-go-cni-dev (>= 1.1.9),
                golang-github-containerd-go-runc-dev (>= 1.1.0),
+               golang-github-containerd-imgcrypt-dev,
                golang-github-containerd-log-dev,
                golang-github-containerd-nri-dev,
                golang-github-containerd-platforms-dev,
@@ -72,7 +73,8 @@ Build-Depends: debhelper-compat (= 13),
                golang-k8s-sigs-structured-merge-diff-dev,
                golang-k8s-sigs-yaml-dev,
                golang-k8s-utils-dev,
-               golang-opentelemetry-otel-dev (>> 1.31)
+               golang-opentelemetry-otel-dev (>> 1.31),
+               golang-tags.cncf-container-device-interface-dev
 Standards-Version: 4.6.2
 Rules-Requires-Root: no
 Homepage: https://containerd.io/
@@ -110,6 +112,7 @@ Depends: golang-github-containerd-btrfs-dev (>= 2),
          golang-github-containerd-fifo-dev (>= 1.0.0~),
          golang-github-containerd-go-cni-dev (>= 1.1.9),
          golang-github-containerd-go-runc-dev (>= 1.1.0),
+         golang-github-containerd-imgcrypt-dev,
          golang-github-containerd-log-dev,
          golang-github-containerd-nri-dev,
          golang-github-containerd-platforms-dev,
@@ -150,6 +153,7 @@ Depends: golang-github-containerd-btrfs-dev (>= 2),
          golang-k8s-klog-dev,
          golang-k8s-utils-dev,
          golang-opentelemetry-otel-dev (>> 1.),
+         golang-tags.cncf-container-device-interface-dev,
          ${misc:Depends}
 Breaks: golang-github-containerd-imgcrypt-dev (<< 1.1.11-4),
         golang-github-docker-docker-dev (<< 26.1)
