@@ -1,3 +1,10 @@
+containerd (1.7.23~ds2-1deepin1) unstable; urgency=medium
+
+  * Fix CVE-2025-64329: memory exhaustion through Attach goroutine leak
+    in CRI server (backport from upstream commit 083b53cd)
+
+ -- deepin-ci-robot <packages@deepin.org>  Tue, 13 May 2025 03:20:00 +0800
+
 containerd (1.7.23~ds2-1) unstable; urgency=medium
 
   * Vendor in containerd/imgcrypt to avoid circular dependency
