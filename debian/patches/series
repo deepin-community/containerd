@@ -8,3 +8,4 @@
 0010-Avoid-dependency-on-component-base.patch
 0011-Add-missing-sources-for-containerd-zfs-aufs.patch
 0012-Add-After-dbus.service-to-containerd.service.patch
+CVE-2025-64329.patch
