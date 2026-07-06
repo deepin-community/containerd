@@ -1,0 +1,59 @@
+Description: add "unimplemented" stubs for RuntimeConfig method required by new k8s upstream "cri-api"
+Author: Tianon Gravi <tianon@debian.org>
+Applied-Upstream: 2.0.0+; https://github.com/containerd/containerd/commit/ed47d6ba7652259e9a458581ef8f34fb44d0f561
+
+diff --git a/pkg/cri/instrument/instrumented_service.go b/pkg/cri/instrument/instrumented_service.go
+index 826837c3e..5624235f3 100644
+--- a/pkg/cri/instrument/instrumented_service.go
++++ b/pkg/cri/instrument/instrumented_service.go
+@@ -23,6 +23,8 @@ import (
+ 
+ 	"github.com/containerd/log"
+ 	runtime "k8s.io/cri-api/pkg/apis/runtime/v1"
++	grpcStatus "google.golang.org/grpc/status"
++	grpcCodes "google.golang.org/grpc/codes"
+ 
+ 	"github.com/containerd/containerd/errdefs"
+ 	"github.com/containerd/containerd/services/warning"
+@@ -61,6 +63,7 @@ type GRPCAlphaServices interface {
+ 
+ // instrumentedService wraps service with containerd namespace and logs.
+ type instrumentedService struct {
++	CRIRuntimeConfigStub
+ 	c criService
+ }
+ 
+@@ -1746,3 +1749,9 @@ func (in *instrumentedService) ListPodSandboxMetrics(ctx context.Context, r *run
+ 	res, err = in.c.ListPodSandboxMetrics(ctx, r)
+ 	return res, errdefs.ToGRPC(err)
+ }
++
++// https://github.com/kubernetes/cri-api/blob/67fcf83dd3a3efb916655f581980d664fe2ff771/pkg/apis/runtime/v1/api.pb.go#L11555-L11557
++type CRIRuntimeConfigStub struct {}
++func (CRIRuntimeConfigStub) RuntimeConfig(ctx context.Context, req *runtime.RuntimeConfigRequest) (*runtime.RuntimeConfigResponse, error) {
++	return nil, grpcStatus.Errorf(grpcCodes.Unimplemented, "method RuntimeConfig not implemented")
++}
+diff --git a/pkg/cri/sbserver/service.go b/pkg/cri/sbserver/service.go
+index c01943535..601468f34 100644
+--- a/pkg/cri/sbserver/service.go
++++ b/pkg/cri/sbserver/service.go
+@@ -73,6 +73,7 @@ type CRIService interface {
+ 
+ // criService implements CRIService.
+ type criService struct {
++	instrument.CRIRuntimeConfigStub
+ 	// config contains all configurations.
+ 	config criconfig.Config
+ 	// imageFSPath is the path to image filesystem.
+diff --git a/pkg/cri/server/service.go b/pkg/cri/server/service.go
+index f5caa68d4..feb470952 100644
+--- a/pkg/cri/server/service.go
++++ b/pkg/cri/server/service.go
+@@ -73,6 +73,7 @@ type CRIService interface {
+ 
+ // criService implements CRIService.
+ type criService struct {
++	instrument.CRIRuntimeConfigStub
+ 	// config contains all configurations.
+ 	config criconfig.Config
+ 	// imageFSPath is the path to image filesystem.
