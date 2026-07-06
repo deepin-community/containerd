@@ -2,10 +2,16 @@
 
 set -ex
 
-# Let integration start containerd daemon
+# This executes the equivalent of `make integration` from the main Makefile,
+# but with all dependencies, golang libraries, and executables built from Debian sources
+
+# The containerd package will start containerd automatically, and will confuse the test
+# To remedy, make sure to stop that service
 systemctl stop containerd
+systemctl mask containerd
 systemctl status containerd || true
 
+# Copy all sources into the _build directory
 dh_auto_configure -O--buildsystem=golang -O--builddirectory=_build
 
 # build and make runc-fp available
@@ -23,4 +29,4 @@ DH_GOLANG_BUILDPKG=github.com/containerd/containerd/integration/client \
   dh_auto_test -O--buildsystem=golang -O--builddirectory=_build -- -c
 
 # criu no permission in lxc testbed
-./_build/client.test -test.v -test.root
+exec ./_build/client.test -test.v -test.root

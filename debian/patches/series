@@ -7,4 +7,7 @@
 0009-Skip-some-tests-that-fail-in-Debian.patch
 0010-Avoid-dependency-on-component-base.patch
 0011-Add-missing-sources-for-containerd-zfs-aufs.patch
-0012-Add-After-dbus.service-to-containerd.service.patch
+0012-stub-cri-api-RuntimeConfig.patch
+0013-CVE-2024-40635.patch
+0012-fix-goroutine-leak-of-container-Attach.patch
+0013-Fix-directory-permissions.patch

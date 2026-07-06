@@ -18,6 +18,8 @@ cp -v _build/bin/containerd-shim-runc-fp-v1 /usr/local/bin/
 cp -v _build/bin/runc-fp /usr/local/bin
 cp -v _build/bin/cni-bridge-fp /usr/lib/cni
 
+export CNI_PATH=/usr/lib/cni
+
 mkdir -p /etc/cni/net.d /etc/cni-fp/net.d
 cat << EOF | tee /etc/cni/net.d/10-containerd-net.conflist
 {

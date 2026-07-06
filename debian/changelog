@@ -1,3 +1,60 @@
+containerd (1.7.24~ds1-6+deb13u1) trixie-security; urgency=medium
+
+  * Fix overly broad directory permissions, Fixes: CVE-2024-25621
+  * Fix bug in the CRI Attach implementation, Fixes: CVE-2025-64329
+    Closes: #1120343
+
+ -- Reinhard Tartler <siretart@tauware.de>  Mon, 17 Nov 2025 12:27:07 -0500
+
+containerd (1.7.24~ds1-6) unstable; urgency=medium
+
+  * Team upload.
+  * CVE-2024-40635: large UID:GID (>32bit) can overflow, runs as root
+    (Closes: #1100806)
+
+ -- Andreas Henriksson <andreas@fatal.se>  Tue, 29 Apr 2025 20:55:02 +0200
+
+containerd (1.7.24~ds1-5) unstable; urgency=medium
+
+  * Add stubs for new cri-api RuntimeConfig (Closes: #1102287)
+
+ -- Tianon Gravi <tianon@debian.org>  Tue, 08 Apr 2025 14:31:41 -0700
+
+containerd (1.7.24~ds1-4) unstable; urgency=medium
+
+  * Revert "Integration tests not stable enough for armel, s390",
+    but mark that autopkgtest as flaky for further observation
+
+ -- Reinhard Tartler <siretart@tauware.de>  Sat, 21 Dec 2024 11:53:55 -0500
+
+containerd (1.7.24~ds1-3) unstable; urgency=medium
+
+  * Also include pkg/nri, and add missing dependencies
+
+ -- Reinhard Tartler <siretart@tauware.de>  Fri, 20 Dec 2024 17:17:13 -0500
+
+containerd (1.7.24~ds1-2) unstable; urgency=medium
+
+  * install pkg/cri, req. for nerdctl
+  * autopkgtest: disable Integration tests for armel, s390, not stable enough
+
+ -- Reinhard Tartler <siretart@tauware.de>  Fri, 20 Dec 2024 06:08:19 -0500
+
+containerd (1.7.24~ds1-1) unstable; urgency=medium
+
+  [ Reinhard Tartler ]
+  * New upstream release: 1.7.24
+  * Install NOTICE file for license compliance
+  * normalize patches with gbp-pq
+  * Add some commentary to the integration tests
+  * debian/watch: reset repacksuffix to ds1
+  * debian/gbp.conf: add upstream-vcs-branch
+  * drop patches applied upstream
+  * Fixup patch to adjust paths where Debian installs CNI binaries
+  * remove 'flaky' marker from autopkgtests
+
+ -- Reinhard Tartler <siretart@tauware.de>  Fri, 13 Dec 2024 11:36:25 -0500
+
 containerd (1.7.23~ds2-1) unstable; urgency=medium
 
   * Vendor in containerd/imgcrypt to avoid circular dependency
